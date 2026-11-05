@@ -1,0 +1,20 @@
+{
+  "name": "conclave",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n \"server,web\" -c \"cyan,magenta\" \"bun run dev:server\" \"bun run dev:web\"",
+    "dev:server": "cd apps/server && bun run src/index.ts",
+    "dev:web": "cd apps/web && bun run dev -- --host",
+    "build": "bun run --filter @conclave/web build",
+    "db:push": "DATABASE_URL=\"postgres://conclave:conclave_password@localhost:5432/conclave_dev\" bun --filter @conclave/db push",
+    "seed": "DATABASE_URL=\"postgres://conclave:conclave_password@localhost:5432/conclave_dev\" bun packages/db/src/seed.ts"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6",
+    "typescript": "^5.7.3"
+  }
+}
