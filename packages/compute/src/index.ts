@@ -4,6 +4,7 @@ import type { ComputeProvider } from "./types";
 export * from "./types";
 export * from "./docker-provider";
 export * from "./acp-client";
+export * from "./engine-runner";
 
 let defaultProvider: ComputeProvider | null = null;
 

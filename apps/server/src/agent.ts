@@ -1,6 +1,6 @@
 import { db, users, messages } from "@conclave/db";
 import { eq } from "drizzle-orm";
-import { getComputeProvider, AcpClient, type SandboxInstance, type AcpUpdateNotification } from "@conclave/compute";
+import { getComputeProvider, runAgentEngine, type SandboxInstance } from "@conclave/compute";
 import Redis from "ioredis";
 
 export async function handleAgentResponse(options: {
@@ -24,7 +24,7 @@ export async function handleAgentResponse(options: {
   }
 
   // Check if message is addressed to agent or requests an action
-  const isDirectlyMentioned = /@?(agent|bot|conclave|assistant)/i.test(userMessage);
+  const isDirectlyMentioned = /@?(agent|bot|conclave|assistant|claude|agy)/i.test(userMessage);
   const isBuildRequest = /(build|create|make|generate).*(app|tracker|dashboard|tool|crm|widget|counter|calc)/i.test(userMessage);
   const isExecRequest = /^(run|exec|execute|python|sqlite|bash|sh)\b/i.test(userMessage.replace(/@?(agent|bot|conclave|assistant)/gi, "").trim());
 
@@ -32,68 +32,57 @@ export async function handleAgentResponse(options: {
     return;
   }
 
-  console.log(`🤖 ACP Agent triggered for message: "${userMessage}"`);
+  console.log(`🤖 Agent loop invoked for message: "${userMessage}"`);
 
   // 2. Obtain isolated Sandbox for this workspace & agent
   const compute = await getComputeProvider();
   const sandbox: SandboxInstance = await compute.getOrCreateSandbox(workspaceId, agent.id);
 
-  // 3. Connect via ACP (Agent Client Protocol)
-  const acp = new AcpClient(sandbox.id);
-  await acp.start();
+  // 3. Select Engine: Claude Code vs Google agy
+  // If user explicitly asks for claude or provides ANTHROPIC_API_KEY, use claude; otherwise use agy (Google subscription)
+  const prefersClaude = /claude/i.test(userMessage) || !!process.env.ANTHROPIC_API_KEY;
+  const engineChoice = prefersClaude ? "claude" : "agy";
 
-  await acp.initialize({
-    protocolVersion: "2024-11-05",
-    clientInfo: { name: "conclave-server", version: "0.1.0" },
-    workspaceRoot: "/workspace",
+  // Enrich prompt for in-chat app building
+  let finalPrompt = userMessage;
+  if (isBuildRequest) {
+    finalPrompt = `${userMessage}\n\nIMPORTANT: Build this as an interactive web app saved directly to index.html with inline styles (Tailwind via CDN) and vanilla JS so it can be served as a micro-app inside the workspace.`;
+  }
+
+  // 4. Run the underlying agent engine (Claude Code or agy)
+  const result = await runAgentEngine({
+    workDir: sandbox.workDir,
+    prompt: finalPrompt,
+    engine: engineChoice,
+    apiKey: process.env.ANTHROPIC_API_KEY,
   });
 
-  // Resolve auth: check if user provided a BYOK key or uses Subscription
-  const byokKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
-  const authMode = byokKey ? "byok" : "subscription";
+  console.log(`✓ Engine (${result.engineUsed}) finished in ${result.durationSeconds}s. Has artifact: ${result.hasArtifact}`);
 
-  const sessionId = `sess-${Date.now()}`;
-  await acp.createSession({
-    sessionId,
-    workspaceId,
-    channelId,
-    auth: {
-      type: authMode,
-      apiKey: byokKey,
-      subscriptionToken: authMode === "subscription" ? "sub_conclave_tier_team" : undefined,
-    },
-  });
-
-  let fullText = "";
   let metadata: Record<string, unknown> = {};
 
-  // Listen to streaming ACP notifications
-  acp.on("update", (update: AcpUpdateNotification) => {
-    if (update.type === "text_delta" && update.delta) {
-      fullText += update.delta;
-    } else if (update.type === "artifact" && update.artifact) {
-      metadata = {
-        type: "interactive_app",
-        appTitle: update.artifact.title,
-        appUrl: `http://localhost:${sandbox.hostPort}`,
-        containerPort: sandbox.hostPort,
-        sandboxId: sandbox.id,
-        protocol: "ACP-v1",
-      };
-    }
-  });
+  if (result.hasArtifact || isBuildRequest) {
+    // Launch server inside the container
+    await compute.execDetached(sandbox.id, "npx serve -s /workspace -l 3000");
 
-  // Send the prompt
-  await acp.prompt({
-    sessionId,
-    prompt: userMessage,
-  });
+    const appTitle = userMessage.includes("crm")
+      ? "Team CRM"
+      : userMessage.includes("tracker")
+      ? "Team Task Tracker"
+      : "Interactive Mini-Tool";
 
-  // Wait briefly for completion
-  await new Promise((resolve) => setTimeout(resolve, 800));
-  acp.close();
+    metadata = {
+      type: "interactive_app",
+      appTitle,
+      appUrl: `http://localhost:${sandbox.hostPort}`,
+      containerPort: sandbox.hostPort,
+      sandboxId: sandbox.id,
+      engine: result.engineUsed,
+      duration: `${result.durationSeconds.toFixed(1)}s`,
+    };
+  }
 
-  // 4. Save agent message to DB
+  // 5. Save agent message to DB
   const [createdMsg] = await db
     .insert(messages)
     .values({
@@ -101,7 +90,7 @@ export async function handleAgentResponse(options: {
       channelId,
       senderId: agent.id,
       parentMessageId: parentMessageId || null,
-      content: fullText.trim() || "Task completed via ACP.",
+      content: result.text,
       metadata,
     })
     .returning();
@@ -131,7 +120,7 @@ export async function handleAgentResponse(options: {
     reactions: [],
   };
 
-  // 5. Broadcast to Redis bus
+  // 6. Broadcast to Redis bus
   await redisPublisher.publish(
     "conclave:events",
     JSON.stringify({
