@@ -14,37 +14,51 @@ export const WorkspaceRail: React.FC<WorkspaceRailProps> = ({
   onSelectWorkspace,
 }) => {
   return (
-    <div className="w-[68px] bg-[#2C0D2E] flex flex-col items-center py-3 gap-3 flex-shrink-0 z-20 border-r border-[#3a123d]">
-      {workspaces.map((ws) => {
-        const isActive = ws.id === activeWorkspaceId;
-        const initial = ws.name.slice(0, 2).toUpperCase();
+    <div className="w-[66px] bg-[#141416] flex flex-col items-center py-3 gap-3 flex-shrink-0 z-20 border-r border-zinc-800 select-none">
+      {/* macOS Window Controls */}
+      <div className="flex items-center gap-1.5 pt-1 pb-2">
+        <div className="w-3 h-3 rounded-full bg-[#ff5f56] border border-[#e0443e] opacity-90 hover:opacity-100 transition-opacity" />
+        <div className="w-3 h-3 rounded-full bg-[#ffbd2e] border border-[#dea123] opacity-90 hover:opacity-100 transition-opacity" />
+        <div className="w-3 h-3 rounded-full bg-[#27c93f] border border-[#1aab29] opacity-90 hover:opacity-100 transition-opacity" />
+      </div>
 
-        return (
-          <div key={ws.id} className="relative group">
-            {isActive && (
-              <div className="absolute -left-3 top-1/2 -translate-y-1/2 w-1.5 h-7 bg-white rounded-r-md" />
-            )}
-            <button
-              onClick={() => onSelectWorkspace(ws.id)}
-              className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm transition-all duration-150 ${
-                isActive
-                  ? "bg-white text-[#2C0D2E] shadow-lg ring-2 ring-white/50"
-                  : "bg-white/10 text-white hover:bg-white/20 hover:rounded-xl"
-              }`}
-              title={ws.name}
-            >
-              {initial}
-            </button>
-          </div>
-        );
-      })}
+      <div className="w-7 h-[1px] bg-zinc-800 my-0.5" />
 
-      <button
-        className="w-10 h-10 rounded-lg bg-white/5 hover:bg-white/15 text-white/70 hover:text-white flex items-center justify-center transition-all duration-150 border border-dashed border-white/20"
-        title="Create a Workspace"
-      >
-        <Plus size={18} />
-      </button>
+      {/* Workspace List */}
+      <div className="flex flex-col items-center gap-2.5 w-full">
+        {workspaces.map((ws) => {
+          const isActive = ws.id === activeWorkspaceId;
+          const initial = ws.name.slice(0, 2).toUpperCase();
+
+          return (
+            <div key={ws.id} className="relative group flex items-center justify-center w-full">
+              {/* Active Pill Indicator */}
+              {isActive && (
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-white rounded-r" />
+              )}
+              <button
+                onClick={() => onSelectWorkspace(ws.id)}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center font-medium text-xs tracking-wide transition-all duration-150 ${
+                  isActive
+                    ? "bg-zinc-100 text-zinc-900 shadow-sm ring-2 ring-zinc-700 font-semibold"
+                    : "bg-zinc-800/80 text-zinc-300 hover:bg-zinc-750 hover:text-white"
+                }`}
+                title={ws.name}
+              >
+                {initial}
+              </button>
+            </div>
+          );
+        })}
+
+        <button
+          className="w-10 h-10 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 flex items-center justify-center transition-all duration-150 border border-zinc-800 hover:border-zinc-700"
+          title="Create Workspace"
+        >
+          <Plus size={15} />
+        </button>
+      </div>
     </div>
   );
 };
+

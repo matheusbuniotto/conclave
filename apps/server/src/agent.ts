@@ -38,7 +38,7 @@ export async function handleAgentResponse(options: {
     return;
   }
 
-  console.log(`🤖 Agent loop invoked for message: "${userMessage}"`);
+  console.log(`Agent loop invoked for message: "${userMessage}"`);
 
   // Choose engine
   const prefersClaude = /claude/i.test(userMessage) || !!process.env.ANTHROPIC_API_KEY;
@@ -52,7 +52,7 @@ export async function handleAgentResponse(options: {
       channelId,
       senderId: agent.id,
       parentMessageId: parentMessageId || null,
-      content: `I'm working on that with ${engineName} in your sandbox... ⏳`,
+      content: `Building in sandbox with ${engineName}...`,
       metadata: { status: "thinking" },
     })
     .returning();
