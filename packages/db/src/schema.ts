@@ -50,6 +50,7 @@ export const channelMembers = pgTable("channel_members", {
   id: uuid("id").primaryKey().defaultRandom(),
   channelId: uuid("channel_id").references(() => channels.id, { onDelete: "cascade" }).notNull(),
   userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  listenMode: text("listen_mode").default("mention").notNull(), // "mention" | "all"
   lastReadAt: timestamp("last_read_at", { withTimezone: true }).defaultNow().notNull(),
   joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -99,6 +100,127 @@ export const bots = pgTable("bots", {
   systemPrompt: text("system_prompt"),
   engine: text("engine").default("agy").notNull(),
   avatarLabel: text("avatar_label").default("1.7.0.0").notNull(),
+  connectionMode: text("connection_mode").default("sandbox").notNull(), // "sandbox" | "cli" | "mcp"
+  skills: jsonb("skills").$type<Array<{ name: string; description: string; prompt?: string }>>().default([]).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const workspaceApps = pgTable("workspace_apps", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
+  channelId: uuid("channel_id").references(() => channels.id, { onDelete: "set null" }),
+  botId: uuid("bot_id").references(() => bots.id, { onDelete: "set null" }),
+  slug: text("slug").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  icon: text("icon").default("app-window").notNull(),
+  status: text("status").default("published").notNull(), // "draft" | "published"
+  accessLevel: text("access_level").default("workspace").notNull(), // "restricted" | "workspace" | "public"
+  isPinned: boolean("is_pinned").default(true).notNull(),
+  currentVersion: integer("current_version").default(1).notNull(),
+  appUrl: text("app_url"),
+  containerPort: integer("container_port"),
+  sandboxId: text("sandbox_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const appVersions = pgTable("app_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  appId: uuid("app_id").references(() => workspaceApps.id, { onDelete: "cascade" }).notNull(),
+  version: integer("version").notNull(),
+  summary: text("summary").notNull(),
+  htmlContent: text("html_content").notNull(),
+  createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const appRecords = pgTable("app_records", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  appId: uuid("app_id").references(() => workspaceApps.id, { onDelete: "cascade" }).notNull(),
+  collection: text("collection").default("items").notNull(),
+  environment: text("environment").default("live").notNull(), // "live" | "draft"
+  data: jsonb("data").$type<Record<string, unknown>>().default({}).notNull(),
+  createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const feedItems = pgTable("feed_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
+  channelId: uuid("channel_id").references(() => channels.id, { onDelete: "set null" }),
+  messageId: uuid("message_id").references(() => messages.id, { onDelete: "set null" }),
+  botId: uuid("bot_id").references(() => bots.id, { onDelete: "set null" }),
+  targetUserId: uuid("target_user_id").references(() => users.id, { onDelete: "set null" }),
+  kind: text("kind").default("approval").notNull(), // "approval" | "question" | "draft" | "alert"
+  priority: text("priority").default("high").notNull(), // "urgent" | "high" | "normal" | "low"
+  title: text("title").notNull(),
+  summary: text("summary"),
+  commandLine: text("command_line"),
+  draftHeader: text("draft_header"),
+  draftBody: text("draft_body"),
+  options: jsonb("options").$type<Array<{ id: string; label: string; description?: string }>>().default([]).notNull(),
+  status: text("status").default("pending").notNull(), // "pending" | "allowed" | "denied" | "answered" | "sent" | "dismissed"
+  resolution: jsonb("resolution").$type<Record<string, unknown>>().default({}).notNull(),
+  decidedById: uuid("decided_by_id").references(() => users.id, { onDelete: "set null" }),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const vaultSecrets = pgTable("vault_secrets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  provider: text("provider").notNull(),
+  accessLevel: text("access_level").default("ask").notNull(), // "auto" | "checked" | "ask" | "human_only"
+  maskedValue: text("masked_value").notNull(),
+  description: text("description"),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  usageCount: integer("usage_count").default(0).notNull(),
+  createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const vaultAuditLogs = pgTable("vault_audit_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
+  secretId: uuid("secret_id").references(() => vaultSecrets.id, { onDelete: "cascade" }).notNull(),
+  actorName: text("actor_name").notNull(),
+  actorType: text("actor_type").default("agent").notNull(),
+  action: text("action").notNull(), // "proxy_injected" | "vault_run" | "approved" | "denied"
+  reason: text("reason").notNull(),
+  targetEndpoint: text("target_endpoint"),
+  status: text("status").default("allowed").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const wikiPages = pgTable("wiki_pages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
+  path: text("path").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  version: integer("version").default(1).notNull(),
+  updatedById: uuid("updated_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const machines = pgTable("machines", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  kind: text("kind").default("cloud_computer").notNull(), // "cloud_computer" | "browser_machine" | "local_host"
+  region: text("region").default("fr-par-1 (Paris)").notNull(),
+  specs: text("specs").default("2 vCPU · 4 GB RAM · 20 GB SSD").notNull(),
+  ipAddress: text("ip_address").default("51.159.42.18").notNull(),
+  status: text("status").default("online").notNull(), // "online" | "driving" | "handoff" | "sleeping"
+  activeAgentName: text("active_agent_name"),
+  currentUrl: text("current_url"),
+  handoffRequested: boolean("handoff_requested").default(false).notNull(),
+  handoffReason: text("handoff_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

@@ -6,9 +6,10 @@ import { Copy, Check, ExternalLink } from "lucide-react";
 interface SlackMarkdownProps {
   content: string;
   className?: string;
+  onOpenWiki?: (path: string) => void;
 }
 
-// Convert Slack mrkdwn tags, mentions, and channel links
+// Convert Slack mrkdwn tags, mentions, channel links, and [[wiki/path|Title]] links
 function preprocessSlackMrkdwn(text: string): string {
   if (!text) return "";
 
@@ -18,11 +19,15 @@ function preprocessSlackMrkdwn(text: string): string {
   // 2. Convert bare Slack links: <http://example.com> -> [http://example.com](http://example.com)
   processed = processed.replace(/<(https?:\/\/[^>]+)>/g, "[$1]($1)");
 
-  // 3. Highlight mentions (@name) and channels (#channel) when outside code spans
+  // 3. Highlight mentions (@name), channels (#channel), and [[wiki/path]] outside code spans
   const parts = processed.split(/(```[\s\S]*?```|`[^`\n]+`)/g);
   for (let i = 0; i < parts.length; i++) {
     // Only process text outside of code
     if (parts[i] && !parts[i].startsWith("`")) {
+      // Wiki links: [[path|label]] or [[path]]
+      parts[i] = parts[i].replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_m, path, label) => {
+        return `[📖 ${label || path}](#wiki:${path.trim()})`;
+      });
       // Mentions: @username
       parts[i] = parts[i].replace(/(^|\s)@([a-zA-Z0-9_\-]+)/g, "$1[@$2](#mention)");
       // Channels: #channel-name
@@ -99,20 +104,32 @@ const CodeBlock: React.FC<{
   );
 };
 
-export const SlackMarkdown: React.FC<SlackMarkdownProps> = ({ content, className = "" }) => {
+export const SlackMarkdown: React.FC<SlackMarkdownProps> = ({ content, className = "", onOpenWiki }) => {
   const processed = preprocessSlackMrkdwn(content);
 
   return (
-    <div className={`slack-markdown text-[13px] leading-relaxed text-zinc-800 break-words ${className}`}>
+    <div className={`slack-markdown text-[13.5px] leading-relaxed text-zinc-800 break-words ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           code: CodeBlock as any,
           p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>,
           a: ({ href, children }) => {
+            if (href?.startsWith("#wiki:")) {
+              const wikiPath = href.replace("#wiki:", "");
+              return (
+                <button
+                  type="button"
+                  onClick={() => onOpenWiki?.(wikiPath)}
+                  className="inline-flex items-center px-1.5 py-0.2 mx-0.5 rounded text-[11.5px] font-semibold bg-[#efebfe] text-[#5b40d6] border border-[#5b40d6]/25 hover:bg-[#5b40d6] hover:text-white transition-colors cursor-pointer"
+                >
+                  {children}
+                </button>
+              );
+            }
             if (href === "#mention") {
               return (
-                <span className="inline-flex items-center px-1.5 py-0.2 mx-0.5 rounded text-[11.5px] font-medium bg-blue-50 text-blue-700 border border-blue-200/60 select-none">
+                <span className="inline-flex items-center px-1.5 py-0.2 mx-0.5 rounded text-[11.5px] font-semibold bg-[#1d9bd1]/10 text-[#1264a3] border border-[#1264a3]/20 select-none">
                   {children}
                 </span>
               );

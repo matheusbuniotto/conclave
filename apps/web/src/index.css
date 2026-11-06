@@ -2,18 +2,84 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Laze Deep Plum-to-Umber Chrome & Concentric Sheet Tokens */
+  --laze-plum-950: #1d1626;
+  --laze-plum-900: #261d33;
+  --laze-plum-850: #2b2139;
+  --laze-plum-800: #352946;
+  --laze-umber-850: #36231f;
+  --color-chrome-bar: #20182c;
+  --laze-violet-600: #5b40d6;
+  --laze-violet-700: #4b30c2;
+  --laze-violet-100: #efebfe;
+  --laze-apricot-500: #f08a3c;
+  --laze-apricot-100: #fbe3cf;
+  --radius-sheet: 14px;
+  --radius-panel: 12px;
+  --radius-composer: 10px;
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 html, body, #root {
   height: 100%;
   width: 100%;
   margin: 0;
   padding: 0;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "SF Pro", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   color: #18181b;
-  background-color: #ffffff;
+  background-color: var(--laze-plum-950);
+}
+
+.laze-sidebar-gradient {
+  background: linear-gradient(168deg, var(--laze-plum-900) 0%, var(--laze-plum-950) 100%);
+}
+
+@keyframes laze-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes laze-artifact-in {
+  from {
+    opacity: 0;
+    transform: translateX(32px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes laze-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-laze-message {
+  animation: laze-message-in 0.28s var(--ease-spring) both;
+}
+
+.animate-laze-panel {
+  animation: laze-artifact-in 0.32s var(--ease-spring) both;
+}
+
+.laze-working-shimmer {
+  background: linear-gradient(90deg, #5b40d6 0%, #f08a3c 50%, #5b40d6 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: laze-shimmer 2.4s linear infinite;
 }
 
 /* Refined macOS scrollbars */
@@ -34,4 +100,3 @@ html, body, #root {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.28);
 }
-

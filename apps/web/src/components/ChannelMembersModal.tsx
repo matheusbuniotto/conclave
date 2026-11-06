@@ -9,7 +9,7 @@ interface ChannelMembersModalProps {
   channel: ChannelItem | null;
   channelMembers: MemberItem[];
   allBots: BotItem[];
-  onAddBotToChannel: (botUserId: string) => Promise<void>;
+  onAddBotToChannel: (botUserId: string, listenMode?: "mention" | "all") => Promise<void>;
   onRemoveBotFromChannel: (botUserId: string) => Promise<void>;
   onOpenCreateBotModal: () => void;
 }
@@ -100,7 +100,23 @@ export const ChannelMembersModal: React.FC<ChannelMembersModalProps> = ({
                         </div>
                       </div>
 
-                      <div className="flex-shrink-0 ml-2">
+                      <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                        {isInChannel && (
+                          <select
+                            value={bot.listenModes?.[channel.id] || "mention"}
+                            onChange={(e) =>
+                              onAddBotToChannel(
+                                bot.userId,
+                                e.target.value as "mention" | "all"
+                              )
+                            }
+                            className="px-2 py-1 rounded-md border border-zinc-200 bg-zinc-50 text-[10.5px] font-medium text-zinc-700 outline-none"
+                            title="When should this agent respond?"
+                          >
+                            <option value="mention">When @mentioned</option>
+                            <option value="all">Every message</option>
+                          </select>
+                        )}
                         {isInChannel ? (
                           <button
                             onClick={() => onRemoveBotFromChannel(bot.userId)}
@@ -112,8 +128,8 @@ export const ChannelMembersModal: React.FC<ChannelMembersModalProps> = ({
                           </button>
                         ) : (
                           <button
-                            onClick={() => onAddBotToChannel(bot.userId)}
-                            className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-zinc-900 hover:bg-zinc-800 text-white transition-colors shadow-2xs flex items-center gap-1"
+                            onClick={() => onAddBotToChannel(bot.userId, "mention")}
+                            className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-[#5b40d6] hover:bg-[#4b30c2] text-white transition-colors shadow-2xs flex items-center gap-1"
                           >
                             <Plus size={11} />
                             <span>Add</span>
