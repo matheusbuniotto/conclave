@@ -3,6 +3,7 @@ import type { ComputeProvider } from "./types";
 
 export * from "./types";
 export * from "./docker-provider";
+export * from "./acp-client";
 
 let defaultProvider: ComputeProvider | null = null;
 
