@@ -5,6 +5,7 @@ import Redis from "ioredis";
 import { db, users, workspaces, channels, messages, reactions, channelMembers, workspaceMembers } from "@conclave/db";
 import { eq, and, isNull, desc, asc } from "drizzle-orm";
 import type { WebSocket } from "ws";
+import { handleAgentResponse } from "./agent";
 
 const fastify = Fastify({ logger: true });
 
@@ -77,6 +78,7 @@ fastify.get<{ Params: { channelId: string } }>(
         channelId: messages.channelId,
         senderId: messages.senderId,
         content: messages.content,
+        metadata: messages.metadata,
         replyCount: messages.replyCount,
         lastReplyAt: messages.lastReplyAt,
         isEdited: messages.isEdited,
@@ -131,6 +133,7 @@ fastify.get<{ Params: { messageId: string } }>(
         senderId: messages.senderId,
         parentMessageId: messages.parentMessageId,
         content: messages.content,
+        metadata: messages.metadata,
         isEdited: messages.isEdited,
         createdAt: messages.createdAt,
         sender: {
@@ -221,6 +224,19 @@ fastify.post<{
       data: payload,
     })
   );
+
+  // Trigger agent in background if sender is human
+  if (sender?.userType === "human") {
+    setTimeout(() => {
+      handleAgentResponse({
+        workspaceId,
+        channelId: request.params.channelId,
+        userMessage: content,
+        parentMessageId,
+        redisPublisher,
+      }).catch((err) => console.error("Agent execution error:", err));
+    }, 100);
+  }
 
   return reply.status(201).send(payload);
 });

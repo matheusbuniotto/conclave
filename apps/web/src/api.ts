@@ -18,6 +18,7 @@ export interface MessageItem {
   channelId: string;
   senderId: string;
   content: string;
+  metadata?: Record<string, any>;
   replyCount: number;
   lastReplyAt?: string | null;
   isEdited: boolean;
