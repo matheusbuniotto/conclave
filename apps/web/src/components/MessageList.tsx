@@ -1,12 +1,14 @@
-import React, { useState } from "react";
-import { MessageSquare, Smile, Bot, CornerDownRight, ExternalLink, ChevronDown, ChevronUp, Play } from "lucide-react";
+import React from "react";
+import { MessageSquare, ExternalLink, PanelRight, CheckCircle2 } from "lucide-react";
 import type { MessageItem } from "../api";
+import type { ActiveAppArtifact } from "./ArtifactPanel";
 
 interface MessageListProps {
   messages: MessageItem[];
   currentUserId?: string;
   onOpenThread: (message: MessageItem) => void;
   onToggleReaction: (messageId: string, emoji: string) => void;
+  onOpenAppPreview?: (artifact: ActiveAppArtifact) => void;
 }
 
 export const MessageList: React.FC<MessageListProps> = ({
@@ -14,17 +16,12 @@ export const MessageList: React.FC<MessageListProps> = ({
   currentUserId,
   onOpenThread,
   onToggleReaction,
+  onOpenAppPreview,
 }) => {
   const quickEmojis = ["👍", "❤️", "🚀", "🎉", "👀"];
-  const [expandedApps, setExpandedApps] = useState<Record<string, boolean>>({});
 
-  const toggleAppExpand = (msgId: string) => {
-    setExpandedApps((prev) => ({ ...prev, [msgId]: !prev[msgId] }));
-  };
-
-  // Helper to format content with basic markdown (bold, code blocks)
+  // Render markdown code blocks if present
   const renderFormattedContent = (content: string) => {
-    // If it contains triple backtick code blocks
     if (content.includes("```")) {
       const parts = content.split(/(```[\s\S]*?```)/g);
       return parts.map((part, index) => {
@@ -65,9 +62,8 @@ export const MessageList: React.FC<MessageListProps> = ({
             minute: "2-digit",
           });
 
-          // Check if message includes generated interactive app
-          const appMeta = msg.metadata?.type === "interactive_app" ? msg.metadata : null;
-          const isExpanded = !!expandedApps[msg.id];
+          // Check if message is an interactive app artifact
+          const appMeta = msg.metadata?.type === "interactive_app" ? (msg.metadata as unknown as ActiveAppArtifact) : null;
 
           // Group reactions by emoji code
           const reactionCounts = msg.reactions.reduce<Record<string, { count: number; users: string[] }>>(
@@ -99,9 +95,8 @@ export const MessageList: React.FC<MessageListProps> = ({
                 <div className="flex items-baseline gap-2">
                   <span className="font-bold text-[14px] text-gray-900">{msg.sender.displayName}</span>
                   {isAgent && (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] bg-purple-100 text-purple-700 font-semibold px-1.5 py-0.2 rounded">
-                      <Bot size={10} />
-                      AI BOT
+                    <span className="bg-gray-200 text-gray-700 text-[10px] font-semibold px-1 py-0.5 rounded leading-none uppercase">
+                      APP
                     </span>
                   )}
                   <span className="text-[11px] text-gray-400">{formattedTime}</span>
@@ -111,68 +106,44 @@ export const MessageList: React.FC<MessageListProps> = ({
                   {renderFormattedContent(msg.content)}
                 </div>
 
-                {/* In-Chat Interactive App Card (Laze-style micro-app) */}
+                {/* Slack-style Clean Bot Attachment Card */}
                 {appMeta && (
-                  <div className="mt-3 max-w-xl rounded-xl border border-blue-200 bg-blue-50/40 p-3 shadow-xs">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded bg-blue-600 text-white flex items-center justify-center">
-                          <Play size={12} fill="currentColor" />
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-sm text-gray-900 leading-tight">
-                            {appMeta.appTitle as string}
-                          </h4>
-                          <span className="text-[11px] text-emerald-600 font-medium">
-                            ● Running in Isolated Sandbox
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <a
-                          href={appMeta.appUrl as string}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 bg-white border border-blue-200 px-2.5 py-1 rounded-md transition-colors"
-                        >
-                          <ExternalLink size={12} />
-                          <span>Open Window</span>
-                        </a>
-                        <button
-                          onClick={() => toggleAppExpand(msg.id)}
-                          className="inline-flex items-center gap-1 text-xs text-gray-700 hover:text-gray-900 bg-white border border-gray-200 px-2.5 py-1 rounded-md transition-colors"
-                        >
-                          {isExpanded ? (
-                            <>
-                              <ChevronUp size={12} />
-                              <span>Hide Preview</span>
-                            </>
-                          ) : (
-                            <>
-                              <ChevronDown size={12} />
-                              <span>Live Preview</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
+                  <div className="mt-2.5 max-w-lg border-l-4 border-[#007A5A] pl-3 py-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-gray-900">{appMeta.appTitle}</span>
+                      <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-medium">
+                        <CheckCircle2 size={12} className="text-emerald-600" />
+                        Running
+                      </span>
                     </div>
 
-                    {/* Expandable Sandboxed App Frame */}
-                    {isExpanded && (
-                      <div className="mt-3 rounded-lg overflow-hidden border border-gray-300 bg-white shadow-inner">
-                        <div className="bg-gray-100 px-3 py-1 text-[11px] font-mono text-gray-500 border-b flex justify-between items-center">
-                          <span>{appMeta.appUrl as string}</span>
-                          <span className="text-emerald-600 font-semibold">Local Docker Sandbox</span>
-                        </div>
-                        <iframe
-                          src={appMeta.appUrl as string}
-                          title={appMeta.appTitle as string}
-                          className="w-full h-80 border-0"
-                          sandbox="allow-scripts allow-forms allow-same-origin"
-                        />
-                      </div>
-                    )}
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      Isolated Micro-Environment • Port {appMeta.containerPort || 3000}
+                    </div>
+
+                    {/* Slack-like action buttons */}
+                    <div className="flex items-center gap-2 mt-2">
+                      {onOpenAppPreview && (
+                        <button
+                          onClick={() => onOpenAppPreview(appMeta)}
+                          className="px-3 py-1 bg-white hover:bg-gray-50 border border-gray-300 rounded font-semibold text-xs text-gray-800 shadow-xs flex items-center gap-1.5 transition-colors"
+                        >
+                          <PanelRight size={13} className="text-gray-600" />
+                          <span>Preview in Split Pane</span>
+                        </button>
+                      )}
+
+                      <a
+                        href={appMeta.appUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1 bg-white hover:bg-gray-50 border border-gray-300 rounded text-xs text-gray-600 hover:text-gray-900 flex items-center gap-1 transition-colors"
+                        title="Open in new window"
+                      >
+                        <ExternalLink size={12} />
+                        <span>Open Window</span>
+                      </a>
+                    </div>
                   </div>
                 )}
 
@@ -205,9 +176,8 @@ export const MessageList: React.FC<MessageListProps> = ({
                     onClick={() => onOpenThread(msg)}
                     className="inline-flex items-center gap-1.5 mt-2 text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline group/thread"
                   >
-                    <CornerDownRight size={13} className="text-blue-500" />
                     <span>
-                      {msg.replyCount} {msg.replyCount === 1 ? "reply" : "replies"}
+                      ↳ {msg.replyCount} {msg.replyCount === 1 ? "reply" : "replies"}
                     </span>
                     <span className="text-[11px] text-gray-400 font-normal group-hover/thread:text-gray-500">
                       View thread

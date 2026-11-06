@@ -7,6 +7,7 @@ import { ChatHeader } from "./components/ChatHeader";
 import { MessageList } from "./components/MessageList";
 import { MessageComposer } from "./components/MessageComposer";
 import { ThreadDrawer } from "./components/ThreadDrawer";
+import { ArtifactPanel, type ActiveAppArtifact } from "./components/ArtifactPanel";
 
 export const App: React.FC = () => {
   const queryClient = useQueryClient();
@@ -16,6 +17,7 @@ export const App: React.FC = () => {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [activeThreadMessage, setActiveThreadMessage] = useState<MessageItem | null>(null);
+  const [activeArtifact, setActiveArtifact] = useState<ActiveAppArtifact | null>(null);
   const [currentUser, setCurrentUser] = useState<MemberItem | null>(null);
 
   // 1. Fetch Workspaces
@@ -97,7 +99,6 @@ export const App: React.FC = () => {
       try {
         const payload = JSON.parse(event.data);
         if (payload.type === "message.created") {
-          // If this was a thread reply
           if (payload.parentMessageId) {
             queryClient.invalidateQueries({ queryKey: ["thread", payload.parentMessageId] });
             queryClient.invalidateQueries({ queryKey: ["messages", payload.channelId] });
@@ -181,6 +182,7 @@ export const App: React.FC = () => {
           setActiveWorkspaceId(id);
           setActiveChannelId(null);
           setActiveThreadMessage(null);
+          setActiveArtifact(null);
         }}
       />
 
@@ -198,7 +200,7 @@ export const App: React.FC = () => {
         onSwitchUser={setCurrentUser}
       />
 
-      {/* 3. Central Chat Column */}
+      {/* 3. Central Chat Column (True Slack Layout) */}
       <div className="flex-1 flex flex-col min-w-0 bg-white">
         <ChatHeader
           channel={activeChannel}
@@ -208,10 +210,17 @@ export const App: React.FC = () => {
         <MessageList
           messages={messages}
           currentUserId={currentUser?.id}
-          onOpenThread={setActiveThreadMessage}
+          onOpenThread={(msg) => {
+            setActiveThreadMessage(msg);
+            setActiveArtifact(null); // Switch focus to thread
+          }}
           onToggleReaction={(messageId, emoji) =>
             toggleReactionMutation.mutate({ messageId, emoji })
           }
+          onOpenAppPreview={(artifact) => {
+            setActiveArtifact(artifact);
+            setActiveThreadMessage(null); // Switch focus to artifact split pane
+          }}
         />
 
         <MessageComposer
@@ -220,14 +229,24 @@ export const App: React.FC = () => {
         />
       </div>
 
-      {/* 4. Collapsible Right Thread Drawer */}
-      <ThreadDrawer
-        parentMessage={activeThreadMessage}
-        replies={threadReplies}
-        channelName={activeChannel?.name || ""}
-        onClose={() => setActiveThreadMessage(null)}
-        onSendReply={(content) => sendThreadReplyMutation.mutate(content)}
-      />
+      {/* 4. Split Pane: Thread Drawer */}
+      {activeThreadMessage && (
+        <ThreadDrawer
+          parentMessage={activeThreadMessage}
+          replies={threadReplies}
+          channelName={activeChannel?.name || ""}
+          onClose={() => setActiveThreadMessage(null)}
+          onSendReply={(content) => sendThreadReplyMutation.mutate(content)}
+        />
+      )}
+
+      {/* 5. Split Pane: Live Micro-App / Artifact Panel */}
+      {activeArtifact && (
+        <ArtifactPanel
+          artifact={activeArtifact}
+          onClose={() => setActiveArtifact(null)}
+        />
+      )}
     </div>
   );
 };
