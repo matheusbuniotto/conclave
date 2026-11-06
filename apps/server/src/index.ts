@@ -225,18 +225,17 @@ fastify.post<{
     })
   );
 
-  // Trigger agent in background if sender is human
-  if (sender?.userType === "human") {
-    setTimeout(() => {
-      handleAgentResponse({
-        workspaceId,
-        channelId: request.params.channelId,
-        userMessage: content,
-        parentMessageId,
-        redisPublisher,
-      }).catch((err) => console.error("Agent execution error:", err));
-    }, 100);
-  }
+  // Trigger agent in background if not sent by bot
+  setTimeout(() => {
+    handleAgentResponse({
+      workspaceId,
+      channelId: request.params.channelId,
+      userMessage: content,
+      parentMessageId,
+      senderId,
+      redisPublisher,
+    }).catch((err) => console.error("Agent execution error:", err));
+  }, 50);
 
   return reply.status(201).send(payload);
 });

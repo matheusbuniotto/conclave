@@ -103,7 +103,18 @@ export const MessageList: React.FC<MessageListProps> = ({
                 </div>
 
                 <div className="text-[14px] text-gray-800 leading-relaxed mt-0.5 break-words">
-                  {renderFormattedContent(msg.content)}
+                  {msg.metadata?.status === "thinking" ? (
+                    <div className="flex items-center gap-2 text-gray-500 py-1 font-medium text-xs">
+                      <span className="flex gap-1 items-center">
+                        <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                        <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                        <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" />
+                      </span>
+                      <span>{msg.content}</span>
+                    </div>
+                  ) : (
+                    renderFormattedContent(msg.content)
+                  )}
                 </div>
 
                 {/* Slack-style Clean Bot Attachment Card */}

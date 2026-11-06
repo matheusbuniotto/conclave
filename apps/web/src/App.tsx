@@ -98,7 +98,7 @@ export const App: React.FC = () => {
     ws.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
-        if (payload.type === "message.created") {
+        if (payload.type === "message.created" || payload.type === "message.updated") {
           if (payload.parentMessageId) {
             queryClient.invalidateQueries({ queryKey: ["thread", payload.parentMessageId] });
             queryClient.invalidateQueries({ queryKey: ["messages", payload.channelId] });
