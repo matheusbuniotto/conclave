@@ -595,4 +595,138 @@ export const api = {
     if (!res.ok) throw new Error("Failed to update machine handoff");
     return res.json();
   },
+
+  async getOptMemSnapshot(botHandle: string, channelId?: string): Promise<OptMemStoreSnapshot> {
+    const qs = channelId ? `?channelId=${encodeURIComponent(channelId)}` : "";
+    const res = await fetch(`${API_BASE}/optmem/${encodeURIComponent(botHandle)}${qs}`);
+    if (!res.ok) throw new Error("Failed to load OptMem snapshot");
+    return res.json();
+  },
+
+  async recordOptMemNote(
+    botHandle: string,
+    text: string,
+    channelId?: string
+  ): Promise<{
+    noteId: number;
+    savedLine: string;
+    settledNaps: Array<{ blockId: string; summary: string }>;
+    snapshot: OptMemStoreSnapshot;
+  }> {
+    const res = await fetch(`${API_BASE}/optmem/${encodeURIComponent(botHandle)}/note`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, channelId }),
+    });
+    if (!res.ok) throw new Error("Failed to record OptMem note");
+    return res.json();
+  },
+
+  async compactOptMemContext(
+    botHandle: string,
+    channelId?: string,
+    reason?: string
+  ): Promise<{
+    compaction: ContextCompactionState;
+    noteRecorded: { noteId: number; savedLine: string };
+    settledNaps: Array<{ blockId: string; summary: string }>;
+    snapshot: OptMemStoreSnapshot;
+  }> {
+    const res = await fetch(`${API_BASE}/optmem/${encodeURIComponent(botHandle)}/compact`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channelId, reason }),
+    });
+    if (!res.ok) throw new Error("Failed to compact context");
+    return res.json();
+  },
+
+  async recallOptMem(
+    botHandle: string,
+    regex: string
+  ): Promise<{ regex: string; output: string; exitCode: number }> {
+    const res = await fetch(`${API_BASE}/optmem/${encodeURIComponent(botHandle)}/recall`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ regex }),
+    });
+    if (!res.ok) throw new Error("Failed to recall OptMem");
+    return res.json();
+  },
+
+  async zoomOptMemBlock(
+    botHandle: string,
+    blockId: string
+  ): Promise<{ blockId: string; output: string; exitCode: number }> {
+    const res = await fetch(`${API_BASE}/optmem/${encodeURIComponent(botHandle)}/zoom`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blockId }),
+    });
+    if (!res.ok) throw new Error("Failed to zoom OptMem block");
+    return res.json();
+  },
+
+  async updateOptMemConfig(
+    botHandle: string,
+    updates: Partial<OptMemConfig> & { channelId?: string }
+  ): Promise<OptMemStoreSnapshot> {
+    const res = await fetch(`${API_BASE}/optmem/${encodeURIComponent(botHandle)}/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+    if (!res.ok) throw new Error("Failed to update OptMem config");
+    return res.json();
+  },
 };
+
+export interface OptMemLogRecord {
+  id: number;
+  date: string;
+  text: string;
+}
+
+export interface OptMemTreeNode {
+  blockId: string;
+  lo: number;
+  hi: number;
+  size: number;
+  level: number;
+  summary: string;
+}
+
+export interface OptMemConfig {
+  WAKE_LINES: number;
+  ENTRY_CHARS: number;
+  PART_CHARS: number;
+  PART_LINES: number;
+}
+
+export interface ContextCompactionState {
+  botHandle: string;
+  channelId: string;
+  rollingSummary: string;
+  compactedMessagesCount: number;
+  activeRawMessagesCount: number;
+  estimatedContextTokens: number;
+  maxContextTokens: number;
+  compactionRuns: number;
+  lastCompactedAt: string | null;
+}
+
+export interface OptMemStoreSnapshot {
+  botHandle: string;
+  memoryDir: string;
+  memoBinaryPath: string;
+  totalMemories: number;
+  pendingCompressionsCount: number;
+  pendingBlocks: string[];
+  wakeOutput: string;
+  wakeLinesCount: number;
+  config: OptMemConfig;
+  logs: OptMemLogRecord[];
+  treeNodes: OptMemTreeNode[];
+  compaction: ContextCompactionState;
+}
+

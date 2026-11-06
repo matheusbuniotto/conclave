@@ -8,6 +8,7 @@ import {
   Sparkles,
   AppWindow,
   Pin,
+  GitMerge,
 } from "lucide-react";
 import type { ChannelItem, WorkspaceAppItem } from "../api";
 
@@ -22,6 +23,7 @@ interface ChatHeaderProps {
   onOpenCreateBotModal?: () => void;
   onSelectPinnedApp?: (app: WorkspaceAppItem) => void;
   onRequestCatchUp?: () => void;
+  onRequestCompact?: () => void;
 }
 
 export const ChatHeader: React.FC<ChatHeaderProps> = ({
@@ -35,6 +37,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   onOpenCreateBotModal,
   onSelectPinnedApp,
   onRequestCatchUp,
+  onRequestCompact,
 }) => {
   const Icon = channel?.type === "private" ? Lock : Hash;
 
@@ -68,6 +71,18 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             >
               <Sparkles size={12} className={isCatchingUp ? "animate-spin" : ""} />
               <span>{isCatchingUp ? "Summarizing…" : "Catch up"}</span>
+            </button>
+          )}
+
+          {/* OptMem + Context Compaction Button (/compact) */}
+          {onRequestCompact && (
+            <button
+              onClick={onRequestCompact}
+              className="flex items-center gap-1.5 text-[11.5px] text-zinc-700 bg-zinc-100/90 hover:bg-zinc-200/80 px-2.5 py-1 rounded-lg cursor-pointer transition-colors border border-zinc-200/80 font-semibold"
+              title="Compact Main Agent Context & Settle OptMem Binary Merge Tree (memo nap)"
+            >
+              <GitMerge size={12} className="text-[#5b40d6]" />
+              <span>+Compact</span>
             </button>
           )}
 

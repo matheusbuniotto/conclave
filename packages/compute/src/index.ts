@@ -5,6 +5,8 @@ export * from "./types";
 export * from "./docker-provider";
 export * from "./acp-client";
 export * from "./engine-runner";
+export * from "./optmem";
+export * from "./subagent-runner";
 
 let defaultProvider: ComputeProvider | null = null;
 

@@ -745,6 +745,7 @@ export const App: React.FC = () => {
                 onOpenCreateBotModal={() => setIsCreateBotModalOpen(true)}
                 onSelectPinnedApp={(app) => openAppInSplitPane(app)}
                 onRequestCatchUp={() => catchUpMutation.mutate()}
+                onRequestCompact={() => sendMessageMutation.mutate("/compact")}
               />
 
               <MessageList

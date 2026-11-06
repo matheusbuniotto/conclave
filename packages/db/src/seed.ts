@@ -1150,13 +1150,19 @@ async function seed() {
       updatedById: mara.id,
       content: `# ACME Logistics — Workspace AGENTS.md
 
-This file is automatically synced to \`.conclave/memory/AGENTS.md\` before every agent turn.
+This file is automatically synced to \`.conclave/memory/AGENTS.md\` before every agent turn alongside \`~/.optmem/memo wake\`.
+
+## Memory (OptMem Binary Merge Tree)
+
+- Your permanent memory is **OptMem** (\`~/.optmem/memo\` with \`$MEMORY_DIR\` per agent).
+- **At startup (mandatory)**: Run \`memo wake\` before any other tool call to load your \`O(log N)\` binary merge tree summaries (\`TREE/2\`, \`TREE/4\`, \`TREE/8\`) and recent verbatim logs (\`LOG.txt\`).
+- **While working (mandatory)**: Call \`memo note "<1 line, max 280 bytes>"\` whenever a task of lasting effect completes, and immediately settle any due power-of-two blocks via \`memo nap <lo>-<hi> "<summary>"\`.
+- **Subprocess Delegation Rule**: Main agents orchestrate memory & context (\`+compact\`) and delegate all concrete tasks to isolated subprocesses with \`OPTMEM_SUBAGENT=1\` and \`"You are a subagent. Don't run memo."\` so subagents never pollute the main agent's context or OptMem log.
 
 ## Standing Operating Rules
-1. **Cold-Chain SLA**: Every refrigerated trailer ("reefer") at the Rotterdam and Antwerp hubs must stay below **5.0 °C**. Flag any telemetry reading above \`5.0 °C\` immediately in \`#ops\`.
+1. **Cold-Chain SLA**: Every refrigerated trailer ("reefer") at the Rotterdam and Antwerp hubs must stay below **5.0 °C**. Flag any telemetry reading above \`5.0 °C\` immediately in \`#ops\`. See \`[[wiki/cold-chain-sla]]\`.
 2. **External Communications Guardrail**: Never send external customer emails, Slack Connect replies, or invoice reminders directly. Always create a **Draft Card** in the **Feed** so a human teammate can review and click **Send it**.
-3. **Subprocess Delegation & Memory**: Keep main agent turns clean and compact. Delegate heavy data/build work to isolated subprocesses and record durable facts via \`OptMem\` (\`memo note\`) and channel \`MEMORY.md\`.
-4. **Internal Apps**: Build side-by-side tools using \`/_conclave/theme.css\`, \`/_conclave/kit.css\`, and \`/_conclave/conclave.js\` (\`Conclave.records()\`). Always keep previous versions revertible.`,
+3. **Internal Apps**: Build side-by-side tools using \`/_conclave/theme.css\`, \`/_conclave/kit.css\`, and \`/_conclave/conclave.js\` (\`Conclave.records()\`). Always keep previous versions revertible.`,
     },
     {
       workspaceId: acme.id,

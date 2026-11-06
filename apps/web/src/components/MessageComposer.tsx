@@ -119,6 +119,14 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
           immediateStop: true,
         },
         {
+          id: "slash-compact",
+          kind: "slash",
+          label: "/compact",
+          sublabel: "Compact main agent context window & settle OptMem binary merge tree (memo nap)",
+          badge: "OptMem",
+          insertText: "/compact",
+        },
+        {
           id: "slash-build",
           kind: "slash",
           label: "/build-app",

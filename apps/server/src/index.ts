@@ -24,6 +24,14 @@ import { eq, and, isNull, desc, asc, inArray } from "drizzle-orm";
 import type { WebSocket } from "ws";
 import { handleAgentResponse, stopActiveChannelTurn } from "./agent";
 import { registerAppKitRoutes } from "./app-kit";
+import {
+  getOptMemSnapshot,
+  recordMainAgentNote,
+  compactMainAgentContext,
+  runMemoCommand,
+  updateOptMemConfig,
+  type OptMemConfig,
+} from "@conclave/compute";
 
 const fastify = Fastify({ logger: true });
 
@@ -1389,6 +1397,118 @@ fastify.post<{
   );
 
   return updated;
+});
+
+// -------------------------------------------------------------
+// OPTMEM PERMANENT MEMORY & CONTEXT COMPACTION ROUTES
+// -------------------------------------------------------------
+
+fastify.get<{
+  Params: { botHandle: string };
+  Querystring: { channelId?: string };
+}>("/api/optmem/:botHandle", async (request) => {
+  const { botHandle } = request.params;
+  const { channelId } = request.query;
+  return getOptMemSnapshot(botHandle, channelId || "global");
+});
+
+fastify.post<{
+  Params: { botHandle: string };
+  Body: { text: string; channelId?: string };
+}>("/api/optmem/:botHandle/note", async (request) => {
+  const { botHandle } = request.params;
+  const { text, channelId } = request.body;
+  const noteRes = recordMainAgentNote(botHandle, text);
+  await redisPublisher.publish(
+    "conclave:events",
+    JSON.stringify({
+      type: "optmem.updated",
+      botHandle,
+      noteId: noteRes.noteId,
+    })
+  );
+  return {
+    ...noteRes,
+    snapshot: getOptMemSnapshot(botHandle, channelId || "global"),
+  };
+});
+
+fastify.post<{
+  Params: { botHandle: string };
+  Body: { channelId?: string; reason?: string };
+}>("/api/optmem/:botHandle/compact", async (request) => {
+  const { botHandle } = request.params;
+  const { channelId, reason } = request.body || {};
+
+  let recentTurns: Array<{ sender: string; content: string }> = [];
+  if (channelId && channelId !== "global") {
+    const rows = await db
+      .select({ content: messages.content, senderName: users.displayName })
+      .from(messages)
+      .innerJoin(users, eq(messages.senderId, users.id))
+      .where(eq(messages.channelId, channelId))
+      .orderBy(desc(messages.createdAt))
+      .limit(12);
+    recentTurns = rows.reverse().map((r) => ({ sender: r.senderName, content: r.content }));
+  }
+
+  const compactRes = compactMainAgentContext({
+    botHandle,
+    channelId: channelId || "global",
+    messagesToCompact: recentTurns,
+    reason: reason || "Manual UI compaction",
+  });
+
+  await redisPublisher.publish(
+    "conclave:events",
+    JSON.stringify({
+      type: "optmem.updated",
+      botHandle,
+    })
+  );
+
+  return {
+    ...compactRes,
+    snapshot: getOptMemSnapshot(botHandle, channelId || "global"),
+  };
+});
+
+fastify.post<{
+  Params: { botHandle: string };
+  Body: { regex: string };
+}>("/api/optmem/:botHandle/recall", async (request) => {
+  const { botHandle } = request.params;
+  const { regex } = request.body;
+  const res = runMemoCommand(botHandle, ["recall", regex || "."]);
+  return {
+    regex,
+    output: res.stdout || res.stderr || "No match.",
+    exitCode: res.exitCode,
+  };
+});
+
+fastify.post<{
+  Params: { botHandle: string };
+  Body: { blockId: string };
+}>("/api/optmem/:botHandle/zoom", async (request) => {
+  const { botHandle } = request.params;
+  const { blockId } = request.body;
+  const res = runMemoCommand(botHandle, ["zoom", blockId]);
+  return {
+    blockId,
+    output: res.stdout || res.stderr,
+    exitCode: res.exitCode,
+  };
+});
+
+fastify.post<{
+  Params: { botHandle: string };
+  Body: Partial<OptMemConfig> & { channelId?: string };
+}>("/api/optmem/:botHandle/config", async (request) => {
+  const { botHandle } = request.params;
+  const { channelId, ...configUpdates } = request.body;
+  updateOptMemConfig(botHandle, configUpdates);
+  return getOptMemSnapshot(botHandle, channelId || "global");
 });
 
 // -------------------------------------------------------------
