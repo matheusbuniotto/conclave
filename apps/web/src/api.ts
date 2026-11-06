@@ -63,6 +63,7 @@ export interface BotItem {
   description?: string | null;
   systemPrompt?: string | null;
   engine: "agy" | "claude";
+  avatarLabel?: string;
   channelIds: string[];
   user: Sender;
   createdAt: string;
@@ -137,6 +138,34 @@ export const api = {
       method: "DELETE",
     });
     if (!res.ok) throw new Error("Failed to remove member from channel");
+    return res.json();
+  },
+
+  async acceptBotInvite(
+    channelId: string,
+    messageId: string,
+    body: { botUserId: string; invitedByUserId: string }
+  ) {
+    const res = await fetch(
+      `${API_BASE}/channels/${channelId}/messages/${messageId}/accept-bot-invite`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    );
+    if (!res.ok) throw new Error("Failed to accept bot invite");
+    return res.json();
+  },
+
+  async dismissBotInvite(channelId: string, messageId: string) {
+    const res = await fetch(
+      `${API_BASE}/channels/${channelId}/messages/${messageId}/dismiss-bot-invite`,
+      {
+        method: "POST",
+      }
+    );
+    if (!res.ok) throw new Error("Failed to dismiss bot invite");
     return res.json();
   },
 

@@ -1,6 +1,17 @@
 import React, { useState } from "react";
-import { X, Sparkles, Bot, Hash, Check } from "lucide-react";
+import { X, Sparkles, Bot, Hash, Check, Shuffle } from "lucide-react";
 import type { ChannelItem } from "../api";
+import {
+  type BotConfig,
+  DEFAULT_BOT,
+  COLORS,
+  COLOR_NAMES,
+  HAT_NAMES,
+  GLASSES_NAMES,
+  SHAPES,
+  encodeBot,
+} from "./bot-avatar";
+import { BotFace } from "./BotFace";
 
 interface CreateBotModalProps {
   isOpen: boolean;
@@ -13,6 +24,7 @@ interface CreateBotModalProps {
     description: string;
     systemPrompt: string;
     engine: "agy" | "claude";
+    avatarLabel: string;
     channelIds: string[];
   }) => Promise<void>;
 }
@@ -29,6 +41,7 @@ export const CreateBotModal: React.FC<CreateBotModalProps> = ({
   const [description, setDescription] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [engine, setEngine] = useState<"agy" | "claude">("agy");
+  const [look, setLook] = useState<BotConfig>({ ...DEFAULT_BOT, color: 7 }); // Default blue
   const [selectedChannels, setSelectedChannels] = useState<string[]>(
     currentChannelId ? [currentChannelId] : channels[0] ? [channels[0].id] : []
   );
@@ -38,9 +51,21 @@ export const CreateBotModal: React.FC<CreateBotModalProps> = ({
 
   const handleNameChange = (val: string) => {
     setName(val);
-    // Auto-generate clean handle if user hasn't typed a custom handle
     const suggested = val.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-");
     setHandle(suggested);
+  };
+
+  const randomizeLook = () => {
+    const randomShape = Math.floor(Math.random() * SHAPES.length);
+    const randomColor = Math.floor(Math.random() * COLORS.length);
+    const randomHat = Math.floor(Math.random() * HAT_NAMES.length);
+    const randomGlasses = Math.floor(Math.random() * GLASSES_NAMES.length);
+    setLook({
+      shape: randomShape,
+      color: randomColor,
+      hat: randomHat,
+      glasses: randomGlasses,
+    });
   };
 
   const toggleChannel = (chId: string) => {
@@ -65,6 +90,7 @@ export const CreateBotModal: React.FC<CreateBotModalProps> = ({
         description: description.trim(),
         systemPrompt: systemPrompt.trim(),
         engine,
+        avatarLabel: encodeBot(look),
         channelIds: selectedChannels,
       });
       // Reset form
@@ -72,6 +98,7 @@ export const CreateBotModal: React.FC<CreateBotModalProps> = ({
       setHandle("");
       setDescription("");
       setSystemPrompt("");
+      setLook({ ...DEFAULT_BOT });
       onClose();
     } catch (err) {
       console.error("Failed to create bot", err);
@@ -94,7 +121,7 @@ export const CreateBotModal: React.FC<CreateBotModalProps> = ({
                 Create New Bot
               </h2>
               <p className="text-[11px] text-zinc-400 font-normal">
-                Dedicated sandbox compute agent for your workspace
+                Deploy an expressive AI agent with isolated sandbox compute
               </p>
             </div>
           </div>
@@ -108,6 +135,77 @@ export const CreateBotModal: React.FC<CreateBotModalProps> = ({
 
         {/* Modal Body */}
         <form onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-4 text-xs">
+          {/* Bot Face Preview & Customization (Grok / Bricksbot Style) */}
+          <div className="flex items-center gap-4 p-3 rounded-xl border border-zinc-200/80 bg-zinc-50/60">
+            {/* Live Interactive Face */}
+            <div className="relative group p-2 rounded-xl bg-white border border-zinc-200 shadow-2xs flex-shrink-0">
+              <BotFace look={look} size={54} />
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[11.5px] font-medium text-zinc-700">
+                  Bot Face & Style
+                </span>
+                <button
+                  type="button"
+                  onClick={randomizeLook}
+                  className="inline-flex items-center gap-1 text-[11px] text-zinc-600 hover:text-zinc-900 bg-white hover:bg-zinc-100 border border-zinc-200 px-2 py-0.5 rounded-md transition-colors shadow-2xs"
+                >
+                  <Shuffle size={11} />
+                  <span>Shuffle</span>
+                </button>
+              </div>
+
+              {/* Color dots picker */}
+              <div className="flex flex-wrap gap-1 mb-2">
+                {COLORS.slice(0, 8).map((pair, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setLook((prev) => ({ ...prev, color: idx }))}
+                    className={`w-4 h-4 rounded-full transition-transform ${
+                      look.color === idx
+                        ? "ring-2 ring-zinc-900 ring-offset-1 scale-110"
+                        : "hover:scale-105 opacity-80 hover:opacity-100"
+                    }`}
+                    style={{ backgroundColor: pair[0] }}
+                    title={COLOR_NAMES[idx]}
+                  />
+                ))}
+              </div>
+
+              {/* Accessories: Hat & Glasses selectors */}
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div>
+                  <span className="text-zinc-400 text-[10px] block mb-0.5">Hat</span>
+                  <select
+                    value={look.hat}
+                    onChange={(e) => setLook((prev) => ({ ...prev, hat: Number(e.target.value) }))}
+                    className="w-full bg-white border border-zinc-200 rounded px-1.5 py-0.5 text-zinc-700 outline-none text-[11px]"
+                  >
+                    {HAT_NAMES.map((name, i) => (
+                      <option key={i} value={i}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <span className="text-zinc-400 text-[10px] block mb-0.5">Glasses</span>
+                  <select
+                    value={look.glasses}
+                    onChange={(e) => setLook((prev) => ({ ...prev, glasses: Number(e.target.value) }))}
+                    className="w-full bg-white border border-zinc-200 rounded px-1.5 py-0.5 text-zinc-700 outline-none text-[11px]"
+                  >
+                    {GLASSES_NAMES.map((name, i) => (
+                      <option key={i} value={i}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Bot Name & Handle */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -223,7 +321,7 @@ export const CreateBotModal: React.FC<CreateBotModalProps> = ({
                 {selectedChannels.length} of {channels.length} selected
               </span>
             </div>
-            <div className="border border-zinc-200/90 rounded-xl divide-y divide-zinc-100 max-h-36 overflow-y-auto bg-zinc-50/40">
+            <div className="border border-zinc-200/90 rounded-xl divide-y divide-zinc-100 max-h-32 overflow-y-auto bg-zinc-50/40">
               {channels.map((ch) => {
                 const isChecked = selectedChannels.includes(ch.id);
                 return (
@@ -250,7 +348,7 @@ export const CreateBotModal: React.FC<CreateBotModalProps> = ({
               })}
             </div>
             <p className="text-[10px] text-zinc-400 mt-1">
-              Bots only respond in channels where they have been added. You can change this anytime.
+              If a bot isn't in a channel, mentioning it in chat will show a prompt to invite it!
             </p>
           </div>
 

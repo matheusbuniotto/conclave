@@ -10,6 +10,7 @@ import { ThreadDrawer } from "./components/ThreadDrawer";
 import { ArtifactPanel, type ActiveAppArtifact } from "./components/ArtifactPanel";
 import { CreateBotModal } from "./components/CreateBotModal";
 import { ChannelMembersModal } from "./components/ChannelMembersModal";
+import { BotProfileModal } from "./components/BotProfileModal";
 
 export const App: React.FC = () => {
   const queryClient = useQueryClient();
@@ -25,6 +26,7 @@ export const App: React.FC = () => {
   // Bot & Channel modals state
   const [isCreateBotModalOpen, setIsCreateBotModalOpen] = useState(false);
   const [isChannelMembersModalOpen, setIsChannelMembersModalOpen] = useState(false);
+  const [selectedBotForProfile, setSelectedBotForProfile] = useState<BotItem | null>(null);
 
   // 1. Fetch Workspaces
   const { data: workspaces = [] } = useQuery({
@@ -245,6 +247,33 @@ export const App: React.FC = () => {
     },
   });
 
+  // Accept bot invite mutation (Slack first mention flow)
+  const acceptBotInviteMutation = useMutation({
+    mutationFn: ({ messageId, botUserId }: { messageId: string; botUserId: string }) => {
+      if (!activeChannelId || !currentUser) throw new Error("Missing context");
+      return api.acceptBotInvite(activeChannelId, messageId, {
+        botUserId,
+        invitedByUserId: currentUser.id,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
+      queryClient.invalidateQueries({ queryKey: ["channelMembers", activeChannelId] });
+      queryClient.invalidateQueries({ queryKey: ["bots", activeWorkspaceId] });
+    },
+  });
+
+  // Dismiss bot invite prompt
+  const dismissBotInviteMutation = useMutation({
+    mutationFn: (messageId: string) => {
+      if (!activeChannelId) throw new Error("Missing active channel");
+      return api.dismissBotInvite(activeChannelId, messageId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
+    },
+  });
+
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) || null;
   const activeChannel = channels.find((c) => c.id === activeChannelId) || null;
 
@@ -276,6 +305,7 @@ export const App: React.FC = () => {
         currentUser={currentUser}
         onSwitchUser={setCurrentUser}
         onOpenCreateBotModal={() => setIsCreateBotModalOpen(true)}
+        onOpenBotProfile={(bot) => setSelectedBotForProfile(bot)}
       />
 
       {/* 3. Central Chat Column (True Slack Layout) */}
@@ -301,6 +331,16 @@ export const App: React.FC = () => {
           onOpenAppPreview={(artifact) => {
             setActiveArtifact(artifact);
             setActiveThreadMessage(null); // Switch focus to artifact split pane
+          }}
+          onAcceptBotInvite={(messageId, botUserId) =>
+            acceptBotInviteMutation.mutate({ messageId, botUserId })
+          }
+          onDismissBotInvite={(messageId) =>
+            dismissBotInviteMutation.mutate(messageId)
+          }
+          onOpenBotProfile={(botUserId) => {
+            const bot = bots.find((b) => b.userId === botUserId) || null;
+            if (bot) setSelectedBotForProfile(bot);
           }}
         />
 
@@ -354,6 +394,30 @@ export const App: React.FC = () => {
           await removeMemberFromChannelMutation.mutateAsync(botUserId);
         }}
         onOpenCreateBotModal={() => setIsCreateBotModalOpen(true)}
+      />
+
+      {/* 8. Modal: Bot Profile / Face & Details (Grok / Bricksbot Style) */}
+      <BotProfileModal
+        isOpen={!!selectedBotForProfile}
+        onClose={() => setSelectedBotForProfile(null)}
+        bot={selectedBotForProfile}
+        channels={channels}
+        onToggleChannel={async (botUserId, channelId, isCurrentlyIn) => {
+          if (isCurrentlyIn) {
+            await removeMemberFromChannelMutation.mutateAsync(botUserId);
+          } else {
+            await addMemberToChannelMutation.mutateAsync(botUserId);
+          }
+          // Update selectedBotForProfile channelIds locally
+          if (selectedBotForProfile) {
+            setSelectedBotForProfile({
+              ...selectedBotForProfile,
+              channelIds: isCurrentlyIn
+                ? selectedBotForProfile.channelIds.filter((id) => id !== channelId)
+                : [...selectedBotForProfile.channelIds, channelId],
+            });
+          }
+        }}
       />
     </div>
   );

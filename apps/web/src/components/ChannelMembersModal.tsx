@@ -1,6 +1,7 @@
 import React from "react";
 import { X, Bot, Plus, Check, Trash2, Hash } from "lucide-react";
 import type { ChannelItem, MemberItem, BotItem } from "../api";
+import { BotFace } from "./BotFace";
 
 interface ChannelMembersModalProps {
   isOpen: boolean;
@@ -81,8 +82,8 @@ export const ChannelMembersModal: React.FC<ChannelMembersModalProps> = ({
                       className="flex items-center justify-between p-2 rounded-lg bg-white border border-zinc-150 hover:border-zinc-200 transition-colors shadow-2xs"
                     >
                       <div className="flex items-center gap-2.5 truncate">
-                        <div className="w-7 h-7 rounded-lg bg-zinc-100 border border-zinc-200 flex items-center justify-center flex-shrink-0 text-zinc-600">
-                          <Bot size={14} />
+                        <div className="w-7 h-7 rounded-lg bg-zinc-50 border border-zinc-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                          <BotFace look={bot.avatarLabel || "1.7.0.0"} size={26} />
                         </div>
                         <div className="truncate">
                           <div className="flex items-center gap-1.5">

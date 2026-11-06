@@ -98,6 +98,7 @@ export const bots = pgTable("bots", {
   description: text("description"),
   systemPrompt: text("system_prompt"),
   engine: text("engine").default("agy").notNull(),
+  avatarLabel: text("avatar_label").default("1.7.0.0").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

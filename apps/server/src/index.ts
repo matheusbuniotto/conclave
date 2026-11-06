@@ -82,6 +82,7 @@ fastify.get<{ Params: { workspaceId: string } }>(
         description: bots.description,
         systemPrompt: bots.systemPrompt,
         engine: bots.engine,
+        avatarLabel: bots.avatarLabel,
         createdAt: bots.createdAt,
         user: {
           id: users.id,
@@ -123,22 +124,32 @@ fastify.post<{
     description?: string;
     systemPrompt?: string;
     engine?: string;
+    avatarLabel?: string;
     channelIds?: string[];
     ownerId: string;
   };
 }>("/api/workspaces/:workspaceId/bots", async (request, reply) => {
   const { workspaceId } = request.params;
-  const { name, handle, description, systemPrompt, engine = "agy", channelIds = [], ownerId } = request.body;
+  const {
+    name,
+    handle,
+    description,
+    systemPrompt,
+    engine = "agy",
+    avatarLabel = "1.7.0.0",
+    channelIds = [],
+    ownerId,
+  } = request.body;
 
   const cleanHandle = handle.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
 
-  // 1. Create a user record of type 'agent'
+  // 1. Create a user record of type 'agent' with procedural face avatar
   const [botUser] = await db
     .insert(users)
     .values({
       email: `${cleanHandle}-${Date.now()}@bot.conclave.local`,
       displayName: name,
-      avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanHandle}`,
+      avatarUrl: `face:${avatarLabel}`,
       userType: "agent",
     })
     .returning();
@@ -172,6 +183,7 @@ fastify.post<{
       description: description || null,
       systemPrompt: systemPrompt || null,
       engine,
+      avatarLabel,
     })
     .returning();
 
@@ -370,15 +382,62 @@ fastify.post<{
   };
 }>("/api/channels/:channelId/messages", async (request, reply) => {
   const { workspaceId, senderId, content, parentMessageId } = request.body;
+  const channelId = request.params.channelId;
+
+  // Check if content mentions a bot that is NOT currently in this channel
+  const workspaceBots = await db
+    .select({
+      id: bots.id,
+      userId: bots.userId,
+      name: bots.name,
+      handle: bots.handle,
+      avatarLabel: bots.avatarLabel,
+    })
+    .from(bots)
+    .where(eq(bots.workspaceId, workspaceId));
+
+  const currentChannelMemberships = await db
+    .select({ userId: channelMembers.userId })
+    .from(channelMembers)
+    .where(eq(channelMembers.channelId, channelId));
+  const channelMemberIds = new Set(currentChannelMemberships.map((m) => m.userId));
+
+  let pendingBotInvite: {
+    botId: string;
+    userId: string;
+    name: string;
+    handle: string;
+    avatarLabel: string;
+  } | null = null;
+
+  for (const b of workspaceBots) {
+    const handleRegex = new RegExp(`@?(${b.handle}|${b.name.replace(/\s+/g, "")})`, "i");
+    if (handleRegex.test(content) && !channelMemberIds.has(b.userId)) {
+      pendingBotInvite = {
+        botId: b.id,
+        userId: b.userId,
+        name: b.name,
+        handle: b.handle,
+        avatarLabel: b.avatarLabel,
+      };
+      break;
+    }
+  }
+
+  const initialMetadata: Record<string, unknown> = {};
+  if (pendingBotInvite) {
+    initialMetadata.pendingBotInvite = pendingBotInvite;
+  }
 
   const [newMsg] = await db
     .insert(messages)
     .values({
       workspaceId,
-      channelId: request.params.channelId,
+      channelId,
       senderId,
       content,
       parentMessageId: parentMessageId || null,
+      metadata: initialMetadata,
     })
     .returning();
 
@@ -421,25 +480,174 @@ fastify.post<{
     "conclave:events",
     JSON.stringify({
       type: "message.created",
-      channelId: request.params.channelId,
+      channelId,
       parentMessageId: parentMessageId || null,
       data: payload,
     })
   );
 
-  // Trigger agent in background if not sent by bot
-  setTimeout(() => {
-    handleAgentResponse({
-      workspaceId,
-      channelId: request.params.channelId,
-      userMessage: content,
-      parentMessageId,
-      senderId,
-      redisPublisher,
-    }).catch((err) => console.error("Agent execution error:", err));
-  }, 50);
+  // If no pending invite, trigger agent in background if not sent by bot
+  if (!pendingBotInvite) {
+    setTimeout(() => {
+      handleAgentResponse({
+        workspaceId,
+        channelId,
+        userMessage: content,
+        parentMessageId,
+        senderId,
+        redisPublisher,
+      }).catch((err) => console.error("Agent execution error:", err));
+    }, 50);
+  }
 
   return reply.status(201).send(payload);
+});
+
+// Accept bot invite to channel (Slack first mention flow)
+fastify.post<{
+  Params: { channelId: string; messageId: string };
+  Body: { botUserId: string; invitedByUserId: string };
+}>("/api/channels/:channelId/messages/:messageId/accept-bot-invite", async (request, reply) => {
+  const { channelId, messageId } = request.params;
+  const { botUserId, invitedByUserId } = request.body;
+
+  // 1. Add bot to channel
+  const existing = await db
+    .select()
+    .from(channelMembers)
+    .where(and(eq(channelMembers.channelId, channelId), eq(channelMembers.userId, botUserId)));
+
+  if (existing.length === 0) {
+    await db.insert(channelMembers).values({
+      channelId,
+      userId: botUserId,
+    });
+
+    await redisPublisher.publish(
+      "conclave:events",
+      JSON.stringify({
+        type: "channel.member_joined",
+        channelId,
+        userId: botUserId,
+      })
+    );
+  }
+
+  // 2. Fetch channel, bot, and inviter
+  const [channel] = await db.select().from(channels).where(eq(channels.id, channelId));
+  const [botUser] = await db.select().from(users).where(eq(users.id, botUserId));
+  const [inviter] = await db.select().from(users).where(eq(users.id, invitedByUserId));
+
+  // 3. Insert system announcement message: "<User> added @<Bot> to #<channel>."
+  if (channel && botUser && inviter) {
+    const [systemMsg] = await db
+      .insert(messages)
+      .values({
+        workspaceId: channel.workspaceId,
+        channelId,
+        senderId: inviter.id,
+        content: `added @${botUser.displayName} to #${channel.name}.`,
+        metadata: { system: true },
+      })
+      .returning();
+
+    await redisPublisher.publish(
+      "conclave:events",
+      JSON.stringify({
+        type: "message.created",
+        channelId,
+        data: {
+          ...systemMsg,
+          sender: inviter,
+          reactions: [],
+        },
+      })
+    );
+  }
+
+  // 4. Clear pendingBotInvite from original message
+  const [originalMsg] = await db.select().from(messages).where(eq(messages.id, messageId));
+  if (originalMsg) {
+    const updatedMeta = { ...(originalMsg.metadata || {}) };
+    delete updatedMeta.pendingBotInvite;
+
+    const [updatedMsg] = await db
+      .update(messages)
+      .set({
+        metadata: updatedMeta,
+        updatedAt: new Date(),
+      })
+      .where(eq(messages.id, messageId))
+      .returning();
+
+    const [sender] = await db.select().from(users).where(eq(users.id, originalMsg.senderId));
+
+    await redisPublisher.publish(
+      "conclave:events",
+      JSON.stringify({
+        type: "message.updated",
+        channelId,
+        data: {
+          ...updatedMsg,
+          sender,
+          reactions: [],
+        },
+      })
+    );
+
+    // 5. Trigger agent loop on the original message now that the bot is in the channel!
+    setTimeout(() => {
+      handleAgentResponse({
+        workspaceId: originalMsg.workspaceId,
+        channelId,
+        userMessage: originalMsg.content,
+        parentMessageId: originalMsg.parentMessageId,
+        senderId: originalMsg.senderId,
+        redisPublisher,
+      }).catch((err) => console.error("Agent execution error:", err));
+    }, 50);
+  }
+
+  return reply.send({ success: true });
+});
+
+// Dismiss bot invite prompt
+fastify.post<{
+  Params: { channelId: string; messageId: string };
+}>("/api/channels/:channelId/messages/:messageId/dismiss-bot-invite", async (request, reply) => {
+  const { channelId, messageId } = request.params;
+  const [originalMsg] = await db.select().from(messages).where(eq(messages.id, messageId));
+
+  if (originalMsg) {
+    const updatedMeta = { ...(originalMsg.metadata || {}) };
+    delete updatedMeta.pendingBotInvite;
+
+    const [updatedMsg] = await db
+      .update(messages)
+      .set({
+        metadata: updatedMeta,
+        updatedAt: new Date(),
+      })
+      .where(eq(messages.id, messageId))
+      .returning();
+
+    const [sender] = await db.select().from(users).where(eq(users.id, originalMsg.senderId));
+
+    await redisPublisher.publish(
+      "conclave:events",
+      JSON.stringify({
+        type: "message.updated",
+        channelId,
+        data: {
+          ...updatedMsg,
+          sender,
+          reactions: [],
+        },
+      })
+    );
+  }
+
+  return reply.send({ success: true });
 });
 
 // Toggle reaction

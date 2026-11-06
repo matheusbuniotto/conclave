@@ -5,10 +5,10 @@ import {
   ChevronDown,
   Plus,
   Search,
-  Sparkles,
   Bot,
 } from "lucide-react";
 import type { ChannelItem, MemberItem, WorkspaceItem, BotItem } from "../api";
+import { BotFace } from "./BotFace";
 
 interface SidebarProps {
   workspace: WorkspaceItem | null;
@@ -20,6 +20,7 @@ interface SidebarProps {
   currentUser: MemberItem | null;
   onSwitchUser: (user: MemberItem) => void;
   onOpenCreateBotModal?: () => void;
+  onOpenBotProfile?: (bot: BotItem) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -32,6 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentUser,
   onSwitchUser,
   onOpenCreateBotModal,
+  onOpenBotProfile,
 }) => {
   const humanMembers = members.filter((m) => m.userType === "human");
 
@@ -111,12 +113,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 return (
                   <div
                     key={b.id}
+                    onClick={() => onOpenBotProfile?.(b)}
                     className="w-full flex items-center justify-between px-2.5 py-1 rounded-md hover:bg-zinc-800/50 text-zinc-400 hover:text-zinc-200 group cursor-pointer transition-colors"
                   >
                     <div className="flex items-center gap-2 truncate">
                       <div className="relative flex-shrink-0">
-                        <div className="w-4 h-4 rounded bg-zinc-800 text-zinc-300 flex items-center justify-center border border-zinc-700">
-                          <Bot size={11} className="text-zinc-300" />
+                        <div className="w-5 h-5 rounded-md bg-zinc-800 text-zinc-300 flex items-center justify-center border border-zinc-700/80 overflow-hidden">
+                          <BotFace look={b.avatarLabel || "1.7.0.0"} size={20} />
                         </div>
                         {isCurrentActiveInChannel && (
                           <div className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-1 ring-zinc-900" title="Active in current channel" />

@@ -90,8 +90,24 @@ export class DockerComputeProvider implements ComputeProvider {
       // Proceed to create
     }
 
-    // Allocate a host port for in-chat app web preview
-    const hostPort = this.nextPort++;
+    // Dynamically find the next available host port
+    let hostPort = 4100;
+    try {
+      const { stdout: psOut } = await execAsync(`docker ps --format "{{.Ports}}"`);
+      const allocatedPorts = new Set(
+        Array.from(psOut.matchAll(/:(\d+)->/g)).map((m) => parseInt(m[1], 10))
+      );
+      while (allocatedPorts.has(hostPort)) {
+        hostPort++;
+      }
+    } catch {
+      hostPort = this.nextPort++;
+    }
+
+    // Clean up any stale/dead container with the same name before recreating
+    try {
+      await execAsync(`docker rm -f ${containerName}`);
+    } catch {}
 
     // Create and run new container
     await execAsync(
