@@ -1,6 +1,6 @@
 import React from "react";
 import { X, CornerDownRight, Sparkles } from "lucide-react";
-import type { MessageItem } from "../api";
+import type { MessageItem, BotItem, MemberItem, WikiPageItem } from "../api";
 import { MessageComposer } from "./MessageComposer";
 import { SlackMarkdown } from "./SlackMarkdown";
 
@@ -8,6 +8,10 @@ interface ThreadDrawerProps {
   parentMessage: MessageItem | null;
   replies: MessageItem[];
   channelName: string;
+  bots?: BotItem[];
+  members?: MemberItem[];
+  wikiPages?: WikiPageItem[];
+  channelMemberUserIds?: Set<string>;
   onClose: () => void;
   onSendReply: (content: string) => void;
 }
@@ -16,6 +20,10 @@ export const ThreadDrawer: React.FC<ThreadDrawerProps> = ({
   parentMessage,
   replies,
   channelName,
+  bots = [],
+  members = [],
+  wikiPages = [],
+  channelMemberUserIds,
   onClose,
   onSendReply,
 }) => {
@@ -111,7 +119,12 @@ export const ThreadDrawer: React.FC<ThreadDrawerProps> = ({
       {/* Reply Composer */}
       <div className="border-t border-zinc-200/90 pt-1.5 bg-zinc-50/50">
         <MessageComposer
-          placeholder="Reply in thread..."
+          placeholder="Reply in thread... (@agent, /skill)"
+          bots={bots}
+          members={members}
+          wikiPages={wikiPages}
+          channelMemberUserIds={channelMemberUserIds}
+          channelName={channelName}
           onSendMessage={onSendReply}
         />
       </div>

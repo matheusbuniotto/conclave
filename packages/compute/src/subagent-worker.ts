@@ -1,3 +1,5 @@
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { runAgentEngine } from "./engine-runner";
 
 export interface SubagentWorkerInput {
@@ -12,6 +14,13 @@ export interface SubagentWorkerInput {
   workDir: string;
   engine: "agy" | "claude";
   apiKey?: string;
+  existingApp?: {
+    appId: string;
+    slug: string;
+    title: string;
+    currentVersion: number;
+    htmlContent: string;
+  };
 }
 
 export interface SubagentInternalStep {
@@ -34,6 +43,8 @@ export interface SubagentWorkerOutput {
     appSlug: string;
     appTitle: string;
     htmlContent: string;
+    version?: number;
+    versionSummary?: string;
     seedRecords: Array<Record<string, unknown>>;
   };
   draftCard?: {

@@ -28,6 +28,7 @@ interface MessageListProps {
   messages: MessageItem[];
   currentUserId?: string;
   currentUserName?: string;
+  autoExpandAgentSteps?: boolean;
   catchUpSummary?: {
     channelName: string;
     messageCount: number;
@@ -342,6 +343,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   messages,
   currentUserId,
   currentUserName,
+  autoExpandAgentSteps = false,
   catchUpSummary,
   onDismissCatchUp,
   onOpenThread,
@@ -434,7 +436,7 @@ export const MessageList: React.FC<MessageListProps> = ({
           const pendingInvite = msg.metadata?.pendingBotInvite;
           const steps = msg.metadata?.steps || [];
           const isThinking = msg.metadata?.status === "thinking";
-          const isStepsOpen = expandedStepsMsgIds[msg.id] ?? isThinking;
+          const isStepsOpen = expandedStepsMsgIds[msg.id] ?? (isThinking || autoExpandAgentSteps);
 
           const reactionCounts = msg.reactions.reduce<
             Record<string, { count: number; users: string[] }>
@@ -484,59 +486,57 @@ export const MessageList: React.FC<MessageListProps> = ({
                     {msg.sender.displayName}
                   </span>
                   {isAgent && (
-                    <span className="text-[9.5px] font-semibold tracking-wide uppercase px-1.5 py-0.2 bg-[#efebfe] text-[#5b40d6] rounded border border-[#5b40d6]/20 leading-none">
-                      Agent
-                    </span>
-                  )}
-                  {msg.metadata?.duration && !isThinking && (
-                    <span className="text-[10px] font-mono text-zinc-400">
-                      · {msg.metadata.duration}
+                    <span className="text-[9.5px] font-semibold tracking-wide uppercase px-1.5 py-0.2 bg-zinc-100 text-zinc-500 rounded leading-none">
+                      APP
                     </span>
                   )}
                   <span className="text-[11px] text-zinc-400 font-normal">
                     {formattedTime}
                   </span>
+                  {!isThinking && steps.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => toggleSteps(msg.id)}
+                      className="inline-flex items-center gap-0.5 text-[11px] text-zinc-400 hover:text-zinc-700 transition-colors"
+                      title="Inspect agent subprocess & OptMem steps"
+                    >
+                      {isStepsOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                      <span>
+                        {steps.length} {steps.length === 1 ? "step" : "steps"}
+                        {msg.metadata?.duration ? ` · ${msg.metadata.duration}` : ""}
+                      </span>
+                    </button>
+                  )}
                 </div>
 
-                {/* Live Steps & Subagents Disclosure Bar (Laze Live Steps) */}
-                {(isThinking || steps.length > 0) && (
+                {/* Live Steps & Subagents Disclosure (Progressive Disclosure) */}
+                {(isThinking || (isStepsOpen && steps.length > 0)) && (
                   <div className="mt-1.5 mb-1.5 max-w-xl">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => toggleSteps(msg.id)}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-100/90 hover:bg-zinc-200/70 border border-zinc-200/80 text-[11.5px] font-medium text-zinc-700 transition-colors"
-                      >
-                        {isThinking ? (
-                          <Loader2 size={12} className="animate-spin text-[#5b40d6]" />
-                        ) : isStepsOpen ? (
-                          <ChevronDown size={12} className="text-zinc-500" />
-                        ) : (
-                          <ChevronRight size={12} className="text-zinc-500" />
-                        )}
-                        <span className={isThinking ? "laze-working-shimmer font-semibold" : ""}>
-                          {isThinking
-                            ? `${msg.sender.displayName} is working…`
-                            : `${steps.length} ${steps.length === 1 ? "step" : "steps"} completed`}
-                        </span>
-                      </button>
+                    {isThinking && (
+                      <div className="flex items-center gap-2">
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-100/90 border border-zinc-200/80 text-[11.5px] font-medium text-zinc-700">
+                          <Loader2 size={12} className="animate-spin text-[#3f0e40]" />
+                          <span className="laze-working-shimmer font-semibold">
+                            {msg.sender.displayName} is working…
+                          </span>
+                        </div>
 
-                      {/* Stop Turn Button for any human in the channel */}
-                      {isThinking && onStopTurn && (
-                        <button
-                          type="button"
-                          onClick={onStopTurn}
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-[11px] font-semibold transition-colors"
-                          title="Stop this agent turn (/stop)"
-                        >
-                          <Square size={10} className="fill-current" />
-                          <span>Stop</span>
-                        </button>
-                      )}
-                    </div>
+                        {onStopTurn && (
+                          <button
+                            type="button"
+                            onClick={onStopTurn}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-[11px] font-semibold transition-colors"
+                            title="Stop this agent turn (/stop)"
+                          >
+                            <Square size={10} className="fill-current" />
+                            <span>Stop</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     {isStepsOpen && steps.length > 0 && (
-                      <div className="mt-1.5 pl-2.5 border-l-2 border-zinc-200 space-y-1.5 py-1">
+                      <div className="mt-1.5 pl-2.5 border-l-2 border-zinc-200 space-y-1.5 py-1 bg-zinc-50/60 rounded-r-lg pr-3">
                         {steps.map((s, idx) => (
                           <div
                             key={s.id || idx}
@@ -657,6 +657,11 @@ export const MessageList: React.FC<MessageListProps> = ({
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                           Live App {appMeta.version ? `v${appMeta.version}` : ""}
                         </span>
+                        {Boolean(msg.metadata?.isUpdate) && (
+                          <span className="inline-flex items-center gap-1 text-[9.5px] bg-blue-50 text-blue-700 border border-blue-200/80 px-1.5 py-0.2 rounded-full font-semibold">
+                            Updated
+                          </span>
+                        )}
                       </div>
                       <span className="text-[10.5px] font-mono text-zinc-400">
                         EU DB • Reactive
@@ -664,7 +669,9 @@ export const MessageList: React.FC<MessageListProps> = ({
                     </div>
 
                     <div className="text-[11.5px] text-zinc-600 mt-1">
-                      Side-by-side internal application with isolated Draft & Live records
+                      {typeof msg.metadata?.versionSummary === "string"
+                        ? msg.metadata.versionSummary
+                        : "Side-by-side internal application with isolated Draft & Live records"}
                     </div>
 
                     <div className="flex items-center gap-2 mt-3">
@@ -674,7 +681,9 @@ export const MessageList: React.FC<MessageListProps> = ({
                           className="px-3 py-1.5 bg-[#5b40d6] hover:bg-[#4b30c2] text-white rounded-lg font-semibold text-xs shadow-2xs flex items-center gap-1.5 transition-colors"
                         >
                           <PanelRight size={13} />
-                          <span>Open Side-by-Side</span>
+                          <span>
+                            Open Side-by-Side {appMeta.version ? `(v${appMeta.version})` : ""}
+                          </span>
                         </button>
                       )}
 

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import {
   X,
   ExternalLink,
@@ -44,6 +44,10 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
   const [showVersionsDropdown, setShowVersionsDropdown] = useState(false);
   const [showShareDropdown, setShowShareDropdown] = useState(false);
+
+  useEffect(() => {
+    setSelectedVersion(null);
+  }, [artifact?.version]);
 
   if (!artifact) return null;
 

@@ -19,6 +19,8 @@ interface MessageComposerProps {
   placeholder?: string;
   bots?: BotItem[];
   members?: MemberItem[];
+  channelMemberUserIds?: Set<string>;
+  channelName?: string;
   wikiPages?: WikiPageItem[];
   onSendMessage: (content: string) => void;
   onStopTurn?: () => void;
@@ -31,6 +33,9 @@ interface AutocompleteItem {
   sublabel: string;
   badge?: string;
   avatarLabel?: string;
+  avatarUrl?: string;
+  inChannel?: boolean;
+  channelNotice?: string;
   insertText: string;
   immediateStop?: boolean;
 }
@@ -39,12 +44,15 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   placeholder = "Send a message...",
   bots = [],
   members = [],
+  channelMemberUserIds,
+  channelName,
   wikiPages = [],
   onSendMessage,
   onStopTurn,
 }) => {
   const [text, setText] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [dismissedMatch, setDismissedMatch] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Detect active trigger token before end of text (@, /, or [[)
@@ -74,37 +82,61 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
 
   const suggestions: AutocompleteItem[] = useMemo(() => {
     if (!triggerInfo) return [];
+    if (dismissedMatch && dismissedMatch === triggerInfo.fullMatch) return [];
     const q = triggerInfo.query;
 
     if (triggerInfo.type === "mention") {
       const botItems: AutocompleteItem[] = bots
         .filter((b) => b.handle.toLowerCase().includes(q) || b.name.toLowerCase().includes(q))
-        .map((b) => ({
-          id: `bot-${b.id}`,
-          kind: "mention-bot",
-          label: `@${b.handle}`,
-          sublabel: `${b.name} — ${b.description || "AI Agent"}`,
-          badge: b.connectionMode === "cli" ? "CLI Agent" : b.engine.toUpperCase(),
-          avatarLabel: b.avatarLabel,
-          insertText: `@${b.handle} `,
-        }));
+        .map((b) => {
+          const inChannel = channelMemberUserIds ? channelMemberUserIds.has(b.userId) : true;
+          return {
+            id: `bot-${b.id}`,
+            kind: "mention-bot" as const,
+            label: `@${b.handle}`,
+            sublabel: `${b.name} — ${b.description || "AI Agent"}`,
+            badge: b.connectionMode === "cli" ? "CLI Agent" : b.engine.toUpperCase(),
+            avatarLabel: b.avatarLabel,
+            inChannel,
+            channelNotice: inChannel
+              ? `In #${channelName || "channel"}`
+              : `Not in #${channelName || "channel"}`,
+            insertText: `@${b.handle} `,
+          };
+        });
 
       const humanItems: AutocompleteItem[] = members
         .filter(
           (m) =>
             m.userType === "human" &&
-            m.displayName.toLowerCase().includes(q)
+            (m.displayName.toLowerCase().includes(q) ||
+              m.displayName.split(" ")[0].toLowerCase().includes(q))
         )
-        .map((m) => ({
-          id: `user-${m.id}`,
-          kind: "mention-human",
-          label: `@${m.displayName.split(" ")[0].toLowerCase()}`,
-          sublabel: `${m.displayName} (${m.role})`,
-          badge: "Teammate",
-          insertText: `@${m.displayName.split(" ")[0]} `,
-        }));
+        .map((m) => {
+          const inChannel = channelMemberUserIds ? channelMemberUserIds.has(m.id) : true;
+          return {
+            id: `user-${m.id}`,
+            kind: "mention-human" as const,
+            label: `@${m.displayName.split(" ")[0].toLowerCase()}`,
+            sublabel: `${m.displayName} (${m.role})`,
+            badge: "Teammate",
+            avatarUrl: m.avatarUrl || undefined,
+            inChannel,
+            channelNotice: inChannel
+              ? `In #${channelName || "channel"}`
+              : `Not in #${channelName || "channel"}`,
+            insertText: `@${m.displayName.split(" ")[0]} `,
+          };
+        });
 
-      return [...botItems, ...humanItems].slice(0, 7);
+      // Sort: channel members first, then non-members
+      const combined = [...botItems, ...humanItems].sort((a, b) => {
+        if (a.inChannel && !b.inChannel) return -1;
+        if (!a.inChannel && b.inChannel) return 1;
+        return 0;
+      });
+
+      return combined.slice(0, 8);
     }
 
     if (triggerInfo.type === "slash") {
@@ -202,7 +234,14 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
       const updated = text.slice(0, idx) + item.insertText;
       setText(updated);
       setSelectedIndex(0);
-      setTimeout(() => textareaRef.current?.focus(), 0);
+      setDismissedMatch(null);
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          const targetPos = idx + item.insertText.length;
+          textareaRef.current.setSelectionRange(targetPos, targetPos);
+        }
+      }, 0);
     }
   };
 
@@ -224,7 +263,10 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
         return;
       }
       if (e.key === "Escape") {
-        setText((t) => t + " ");
+        e.preventDefault();
+        if (triggerInfo) {
+          setDismissedMatch(triggerInfo.fullMatch);
+        }
         return;
       }
     }
@@ -281,7 +323,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
             </span>
             <span className="font-mono text-[10px]">↑↓ Tab / Enter</span>
           </div>
-          <div className="divide-y divide-zinc-100 max-h-60 overflow-y-auto">
+          <div className="divide-y divide-zinc-100 max-h-64 overflow-y-auto">
             {suggestions.map((item, idx) => {
               const active = idx === selectedIndex;
               return (
@@ -290,38 +332,65 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
                   type="button"
                   onClick={() => applySuggestion(item)}
                   className={`w-full px-3 py-2 text-left flex items-center justify-between gap-3 transition-colors ${
-                    active ? "bg-[#efebfe]/65" : "hover:bg-zinc-50"
+                    active ? "bg-[#efebfe]/70" : "hover:bg-zinc-50"
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
                     {item.avatarLabel ? (
-                      <div className="w-6 h-6 rounded-md bg-white border border-zinc-200 flex items-center justify-center flex-shrink-0">
-                        <BotFace look={item.avatarLabel} size={22} />
+                      <div className="w-7 h-7 rounded-lg bg-white border border-zinc-200/90 flex items-center justify-center flex-shrink-0 shadow-2xs">
+                        <BotFace look={item.avatarLabel} size={24} />
                       </div>
+                    ) : item.avatarUrl ? (
+                      <img
+                        src={item.avatarUrl}
+                        alt=""
+                        className="w-7 h-7 rounded-lg object-cover border border-zinc-200 flex-shrink-0 shadow-2xs"
+                      />
                     ) : item.immediateStop ? (
-                      <div className="w-6 h-6 rounded-md bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center flex-shrink-0">
-                        <Square size={11} className="fill-current" />
+                      <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center flex-shrink-0">
+                        <Square size={12} className="fill-current" />
                       </div>
                     ) : item.kind === "wiki" ? (
-                      <div className="w-6 h-6 rounded-md bg-[#efebfe] text-[#5b40d6] flex items-center justify-center flex-shrink-0">
-                        <BookOpen size={12} />
+                      <div className="w-7 h-7 rounded-lg bg-[#efebfe] text-[#5b40d6] flex items-center justify-center flex-shrink-0">
+                        <BookOpen size={13} />
                       </div>
                     ) : (
-                      <div className="w-6 h-6 rounded-md bg-zinc-100 text-zinc-600 flex items-center justify-center flex-shrink-0">
-                        <Terminal size={12} />
+                      <div className="w-7 h-7 rounded-lg bg-zinc-100 text-zinc-600 flex items-center justify-center flex-shrink-0">
+                        <Terminal size={13} />
                       </div>
                     )}
-                    <div className="min-w-0">
-                      <div className="font-bold text-xs text-zinc-900 font-mono">
-                        {item.label}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-[12.5px] text-zinc-900 font-mono tracking-tight">
+                          {item.label}
+                        </span>
+
+                        {item.channelNotice && (
+                          <span
+                            className={`inline-flex items-center gap-1 text-[9.5px] px-1.5 py-0.2 rounded-full font-medium ${
+                              item.inChannel
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200/60"
+                                : "bg-amber-50 text-amber-700 border border-amber-200/70"
+                            }`}
+                          >
+                            <span
+                              className={`w-1 h-1 rounded-full ${
+                                item.inChannel ? "bg-emerald-500" : "bg-amber-500"
+                              }`}
+                            />
+                            {item.channelNotice}
+                          </span>
+                        )}
                       </div>
-                      <div className="text-[11px] text-zinc-500 truncate">
+
+                      <div className="text-[11px] text-zinc-500 truncate mt-0.5">
                         {item.sublabel}
                       </div>
                     </div>
                   </div>
+
                   {item.badge && (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-zinc-100 text-zinc-600 border border-zinc-200/80 flex-shrink-0">
+                    <span className="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-zinc-100 text-zinc-600 border border-zinc-200/80 flex-shrink-0 font-mono">
                       {item.badge}
                     </span>
                   )}
@@ -408,15 +477,9 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
               title="Link Memory or Wiki page ([[)"
             >
               <BookOpen size={11} />
-              <span>[[Wiki]]</span>
+              <span>Wiki</span>
             </button>
           </div>
-
-          <span className="text-[10.5px] text-zinc-400 hidden sm:inline">
-            Type <code className="text-zinc-600 font-mono">@</code> for agents,{" "}
-            <code className="text-zinc-600 font-mono">/</code> for skills,{" "}
-            <code className="text-zinc-600 font-mono">[[</code> for wiki
-          </span>
         </div>
 
         {/* Text Input Area */}
@@ -425,8 +488,12 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
             ref={textareaRef}
             value={text}
             onChange={(e) => {
-              setText(e.target.value);
+              const val = e.target.value;
+              setText(val);
               setSelectedIndex(0);
+              if (dismissedMatch && !val.includes(dismissedMatch)) {
+                setDismissedMatch(null);
+              }
               e.target.style.height = "auto";
               e.target.style.height = `${Math.min(e.target.scrollHeight, 180)}px`;
             }}

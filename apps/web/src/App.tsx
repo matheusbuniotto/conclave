@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -25,6 +25,7 @@ import { WikiView } from "./components/WikiView";
 import { MachinesView } from "./components/MachinesView";
 import { ConnectCliModal } from "./components/ConnectCliModal";
 import { CommandPaletteModal } from "./components/CommandPaletteModal";
+import { SettingsModal, type SettingsTab } from "./components/SettingsModal";
 
 export const App: React.FC = () => {
   const queryClient = useQueryClient();
@@ -52,6 +53,14 @@ export const App: React.FC = () => {
   const [isChannelMembersModalOpen, setIsChannelMembersModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [selectedBotForProfile, setSelectedBotForProfile] = useState<BotItem | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  const [autoExpandAgentSteps, setAutoExpandAgentSteps] = useState(false);
+
+  const openSettings = (tab: SettingsTab = "general") => {
+    setSettingsTab(tab);
+    setIsSettingsOpen(true);
+  };
 
   // Global Keyboard Shortcuts (Cmd+K / Ctrl+K for Command Palette, also forwarded from App iframes!)
   useEffect(() => {
@@ -123,6 +132,11 @@ export const App: React.FC = () => {
       activeChannelId ? api.getChannelMembers(activeChannelId) : Promise.resolve([]),
     enabled: !!activeChannelId,
   });
+
+  const channelMemberUserIds = useMemo(
+    () => new Set(channelMembers.map((m) => m.id)),
+    [channelMembers]
+  );
 
   useEffect(() => {
     if (members.length > 0 && !currentUser) {
@@ -265,6 +279,22 @@ export const App: React.FC = () => {
           queryClient.invalidateQueries({ queryKey: ["channels", activeWorkspaceId] });
         } else if (payload.type === "app.updated" || payload.type === "app.records_updated") {
           queryClient.invalidateQueries({ queryKey: ["apps", activeWorkspaceId] });
+          queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
+          if (payload.appId || payload.appSlug) {
+            setActiveArtifact((prev) => {
+              if (!prev) return null;
+              if (
+                (payload.appId && prev.appId === payload.appId) ||
+                (payload.appSlug && prev.appSlug === payload.appSlug)
+              ) {
+                return {
+                  ...prev,
+                  version: payload.version || (prev.version ? prev.version + 1 : 2),
+                };
+              }
+              return prev;
+            });
+          }
         } else if (payload.type === "feed.updated") {
           queryClient.invalidateQueries({ queryKey: ["feed", activeWorkspaceId] });
         } else if (payload.type === "machine.updated") {
@@ -590,12 +620,14 @@ export const App: React.FC = () => {
   const handoffMachinesCount = machines.filter((m) => m.handoffRequested).length;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#1d1626] p-1.5 gap-0 text-zinc-900">
-      {/* 1. Deep Plum Workspace & Platform Switcher Rail */}
+    <div className="flex h-screen w-screen overflow-hidden bg-[#2c092d] gap-0 text-zinc-900">
+      {/* 1. Native Slack Workspace Rail */}
       <WorkspaceRail
         workspaces={workspaces}
         activeWorkspaceId={activeWorkspaceId}
         activeView={activeView}
+        members={members}
+        currentUser={currentUser}
         onSelectWorkspace={(id) => {
           setActiveWorkspaceId(id);
           setActiveChannelId(null);
@@ -603,9 +635,11 @@ export const App: React.FC = () => {
           setActiveArtifact(null);
         }}
         onSelectView={setActiveView}
+        onSwitchUser={setCurrentUser}
+        onOpenSettings={(tab) => openSettings(tab)}
       />
 
-      {/* 2. Laze Deep Plum Sidebar */}
+      {/* 2. Native Slack Sidebar with Progressive Disclosure */}
       <Sidebar
         workspace={activeWorkspace}
         channels={channels}
@@ -622,12 +656,7 @@ export const App: React.FC = () => {
           setActiveChannelId(id);
           setActiveThreadMessage(null);
           setCatchUpSummary(null);
-          const pinned = workspaceApps.find((a) => a.channelId === id && a.isPinned);
-          if (pinned) {
-            openAppInSplitPane(pinned);
-          } else {
-            setActiveArtifact(null);
-          }
+          setActiveArtifact(null);
         }}
         onOpenAppPreview={(app) => openAppInSplitPane(app)}
         currentUser={currentUser}
@@ -637,10 +666,11 @@ export const App: React.FC = () => {
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         onOpenBotProfile={(bot) => setSelectedBotForProfile(bot)}
         onCreateChannel={(name) => createChannelMutation.mutate(name)}
+        onOpenSettings={(tab) => openSettings(tab)}
       />
 
-      {/* 3. Main Concentric Rounded Content Sheet (Laze .laze-sheet) */}
-      <div className="flex-1 flex min-w-0 bg-white rounded-[14px] overflow-hidden shadow-2xl border border-white/10">
+      {/* 3. Main Content Sheet */}
+      <div className="flex-1 flex min-w-0 bg-white overflow-hidden">
         {activeView === "feed" ? (
           <FeedView
             items={feedItems}
@@ -743,15 +773,23 @@ export const App: React.FC = () => {
                 isCatchingUp={catchUpMutation.isPending}
                 onOpenMembersModal={() => setIsChannelMembersModalOpen(true)}
                 onOpenCreateBotModal={() => setIsCreateBotModalOpen(true)}
-                onSelectPinnedApp={(app) => openAppInSplitPane(app)}
+                onSelectPinnedApp={(app) => {
+                  if (activeArtifact?.appSlug === app.slug) {
+                    setActiveArtifact(null);
+                  } else {
+                    openAppInSplitPane(app);
+                  }
+                }}
                 onRequestCatchUp={() => catchUpMutation.mutate()}
                 onRequestCompact={() => sendMessageMutation.mutate("/compact")}
+                onOpenSettings={() => openSettings("general")}
               />
 
               <MessageList
                 messages={messages}
                 currentUserId={currentUser?.id}
                 currentUserName={currentUser?.displayName}
+                autoExpandAgentSteps={autoExpandAgentSteps}
                 catchUpSummary={catchUpSummary}
                 onDismissCatchUp={() => setCatchUpSummary(null)}
                 onOpenThread={(msg) => {
@@ -788,6 +826,8 @@ export const App: React.FC = () => {
                 }
                 bots={bots}
                 members={members}
+                channelMemberUserIds={channelMemberUserIds}
+                channelName={activeChannel?.name}
                 wikiPages={wikiPages}
                 onSendMessage={(content) => sendMessageMutation.mutate(content)}
                 onStopTurn={() => stopTurnMutation.mutate()}
@@ -799,6 +839,10 @@ export const App: React.FC = () => {
                 parentMessage={activeThreadMessage}
                 replies={threadReplies}
                 channelName={activeChannel?.name || ""}
+                bots={bots}
+                members={members}
+                wikiPages={wikiPages}
+                channelMemberUserIds={channelMemberUserIds}
                 onClose={() => setActiveThreadMessage(null)}
                 onSendReply={(content) => {
                   if (!activeChannelId) return;
@@ -831,6 +875,53 @@ export const App: React.FC = () => {
       </div>
 
       {/* Modals */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        initialTab={settingsTab}
+        workspace={activeWorkspace}
+        members={members}
+        currentUser={currentUser}
+        bots={bots}
+        wikiPages={wikiPages}
+        vaultData={vaultData}
+        machines={machines}
+        autoExpandAgentSteps={autoExpandAgentSteps}
+        onToggleAutoExpandAgentSteps={setAutoExpandAgentSteps}
+        onClose={() => setIsSettingsOpen(false)}
+        onSwitchUser={setCurrentUser}
+        onOpenCreateBotModal={() => setIsCreateBotModalOpen(true)}
+        onOpenConnectCliModal={() => setIsConnectCliModalOpen(true)}
+        onOpenBotProfile={(bot) => setSelectedBotForProfile(bot)}
+        onSaveWikiPage={async (data) => {
+          if (!activeWorkspaceId) return;
+          await api.saveWikiPage(activeWorkspaceId, {
+            ...data,
+            updatedById: currentUser?.id,
+          });
+          queryClient.invalidateQueries({ queryKey: ["wiki", activeWorkspaceId] });
+        }}
+        onCreateVaultSecret={async (data) => {
+          if (!activeWorkspaceId) return;
+          await api.createVaultSecret(activeWorkspaceId, {
+            ...data,
+            createdById: currentUser?.id,
+          });
+          queryClient.invalidateQueries({ queryKey: ["vault", activeWorkspaceId] });
+        }}
+        onUpdateVaultLevel={async (secretId, accessLevel) => {
+          await api.updateVaultSecretLevel(secretId, accessLevel);
+          queryClient.invalidateQueries({ queryKey: ["vault", activeWorkspaceId] });
+        }}
+        onSimulateVaultProxy={async (secretId, body) => {
+          await api.simulateVaultProxyCall(secretId, body);
+          queryClient.invalidateQueries({ queryKey: ["vault", activeWorkspaceId] });
+        }}
+        onUpdateMachineHandoff={async (machineId, action, reason) => {
+          await api.updateMachineHandoff(machineId, { action, reason });
+          queryClient.invalidateQueries({ queryKey: ["machines", activeWorkspaceId] });
+        }}
+      />
+
       <CreateBotModal
         isOpen={isCreateBotModalOpen}
         onClose={() => setIsCreateBotModalOpen(false)}

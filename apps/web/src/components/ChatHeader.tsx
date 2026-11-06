@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Hash,
   Lock,
@@ -7,8 +7,9 @@ import {
   Plus,
   Sparkles,
   AppWindow,
-  Pin,
   GitMerge,
+  MoreHorizontal,
+  Settings,
 } from "lucide-react";
 import type { ChannelItem, WorkspaceAppItem } from "../api";
 
@@ -24,6 +25,7 @@ interface ChatHeaderProps {
   onSelectPinnedApp?: (app: WorkspaceAppItem) => void;
   onRequestCatchUp?: () => void;
   onRequestCompact?: () => void;
+  onOpenSettings?: () => void;
 }
 
 export const ChatHeader: React.FC<ChatHeaderProps> = ({
@@ -38,124 +40,154 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   onSelectPinnedApp,
   onRequestCatchUp,
   onRequestCompact,
+  onOpenSettings,
 }) => {
+  const [menuOpen, setMenuOpen] = useState(false);
   const Icon = channel?.type === "private" ? Lock : Hash;
 
   return (
-    <div className="border-b border-zinc-200/80 bg-white/95 backdrop-blur-sm z-10 select-none flex-shrink-0">
-      {/* Main Header Row */}
-      <div className="h-12 px-5 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2.5 truncate min-w-0">
-          <Icon size={16} className="text-zinc-400 flex-shrink-0" />
-          <span className="font-bold text-zinc-900 text-[14px] tracking-tight flex-shrink-0">
-            {channel?.name || "Select Channel"}
+    <div className="h-12 px-5 border-b border-zinc-200/80 bg-white flex items-center justify-between gap-4 z-10 select-none flex-shrink-0">
+      {/* Left: Channel Name + Topic */}
+      <div className="flex items-center gap-2 truncate min-w-0">
+        <button
+          onClick={onOpenMembersModal}
+          className="flex items-center gap-1 font-bold text-zinc-900 text-[15px] tracking-tight hover:bg-zinc-100 px-1.5 py-0.5 -ml-1.5 rounded-md transition-colors flex-shrink-0"
+        >
+          <Icon size={16} className="text-zinc-500 flex-shrink-0" />
+          <span>{channel?.name || "general"}</span>
+        </button>
+
+        {channel?.topic && (
+          <span className="text-[12.5px] text-zinc-500 truncate font-normal hidden sm:inline">
+            {channel.topic}
           </span>
-          {channel?.topic && (
+        )}
+      </div>
+
+      {/* Right: Pinned Canvas/App Tab + Unified Member/Agent Pill + Progressive Disclosure Menu */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Slack Canvas-style Pinned App Pill(s) */}
+        {pinnedApps.map((app) => {
+          const isSelected = activeAppSlug === app.slug;
+          return (
+            <button
+              key={app.id}
+              onClick={() => onSelectPinnedApp?.(app)}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all border ${
+                isSelected
+                  ? "bg-[#3f0e40] text-white border-[#3f0e40]"
+                  : "bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border-zinc-200/90"
+              }`}
+              title={`Open pinned app: ${app.title}`}
+            >
+              <AppWindow
+                size={12.5}
+                className={isSelected ? "text-white" : "text-[#3f0e40]"}
+              />
+              <span className="max-w-[120px] truncate">{app.title}</span>
+            </button>
+          );
+        })}
+
+        {/* Unified Slack Members & Agents Pill */}
+        <button
+          onClick={onOpenMembersModal}
+          className="flex items-center gap-2 text-xs text-zinc-600 hover:bg-zinc-100 px-2.5 py-1 rounded-md transition-colors border border-zinc-200/80 font-medium"
+          title="View members & agents in channel"
+        >
+          <span className="flex items-center gap-1">
+            <Users size={12.5} className="text-zinc-500" />
+            <span>{memberCount}</span>
+          </span>
+          {botCount > 0 && (
             <>
-              <span className="text-zinc-300 text-xs">/</span>
-              <span className="text-[12px] text-zinc-500 truncate font-normal">
-                {channel.topic}
+              <span className="text-zinc-300">|</span>
+              <span className="flex items-center gap-1 text-[#3f0e40]">
+                <Bot size={12.5} />
+                <span>{botCount}</span>
               </span>
             </>
           )}
-        </div>
+        </button>
 
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {/* AI Catch Up Summary Button (Laze Catch-Up) */}
-          {onRequestCatchUp && (
-            <button
-              onClick={onRequestCatchUp}
-              disabled={isCatchingUp}
-              className="flex items-center gap-1.5 text-[11.5px] text-[#5b40d6] bg-[#efebfe]/70 hover:bg-[#efebfe] px-2.5 py-1 rounded-lg cursor-pointer transition-colors border border-[#5b40d6]/20 font-semibold"
-              title="Summarize recent conversation activity"
-            >
-              <Sparkles size={12} className={isCatchingUp ? "animate-spin" : ""} />
-              <span>{isCatchingUp ? "Summarizing…" : "Catch up"}</span>
-            </button>
-          )}
-
-          {/* OptMem + Context Compaction Button (/compact) */}
-          {onRequestCompact && (
-            <button
-              onClick={onRequestCompact}
-              className="flex items-center gap-1.5 text-[11.5px] text-zinc-700 bg-zinc-100/90 hover:bg-zinc-200/80 px-2.5 py-1 rounded-lg cursor-pointer transition-colors border border-zinc-200/80 font-semibold"
-              title="Compact Main Agent Context & Settle OptMem Binary Merge Tree (memo nap)"
-            >
-              <GitMerge size={12} className="text-[#5b40d6]" />
-              <span>+Compact</span>
-            </button>
-          )}
-
-          {/* Manage Bots in Channel */}
+        {/* Progressive Disclosure More Menu (⋯) */}
+        <div className="relative">
           <button
-            onClick={onOpenMembersModal}
-            className="flex items-center gap-1.5 text-[11.5px] text-zinc-700 bg-white hover:bg-zinc-50 px-2.5 py-1 rounded-lg cursor-pointer transition-colors border border-zinc-200/90 font-medium shadow-2xs"
-            title="Manage Agents & Listen Mode in Channel"
+            onClick={() => setMenuOpen(!menuOpen)}
+            className="w-7 h-7 rounded-md hover:bg-zinc-100 text-zinc-500 hover:text-zinc-800 flex items-center justify-center transition-colors"
+            title="Channel actions & AI tools"
           >
-            <Bot size={13} className="text-[#5b40d6]" />
-            <span>
-              {botCount} {botCount === 1 ? "Agent" : "Agents"}
-            </span>
+            <MoreHorizontal size={16} />
           </button>
 
-          {/* Member Counter */}
-          <button
-            onClick={onOpenMembersModal}
-            className="flex items-center gap-1.5 text-[11.5px] text-zinc-600 bg-zinc-100/80 hover:bg-zinc-200/70 px-2.5 py-1 rounded-lg cursor-pointer transition-colors border border-zinc-200/60 font-medium"
-            title="Channel Members"
-          >
-            <Users size={12} className="text-zinc-500" />
-            <span>{memberCount}</span>
-          </button>
+          {menuOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setMenuOpen(false)}
+              />
+              <div className="absolute right-0 top-8 z-50 w-56 rounded-xl bg-white shadow-xl border border-zinc-200 py-1.5 text-zinc-800 animate-laze-message">
+                {onRequestCatchUp && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onRequestCatchUp();
+                    }}
+                    disabled={isCatchingUp}
+                    className="w-full px-3 py-1.5 text-left text-xs hover:bg-zinc-100 flex items-center gap-2.5 text-zinc-700"
+                  >
+                    <Sparkles size={13} className="text-[#3f0e40]" />
+                    <span>
+                      {isCatchingUp ? "Summarizing channel…" : "Catch up on channel"}
+                    </span>
+                  </button>
+                )}
 
-          {onOpenCreateBotModal && (
-            <button
-              onClick={onOpenCreateBotModal}
-              className="flex items-center gap-1 text-[11.5px] text-white bg-zinc-900 hover:bg-zinc-800 px-2.5 py-1 rounded-lg transition-colors font-medium shadow-2xs"
-              title="Add or Connect Agent"
-            >
-              <Plus size={12} />
-              <span>Add Agent</span>
-            </button>
+                {onRequestCompact && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onRequestCompact();
+                    }}
+                    className="w-full px-3 py-1.5 text-left text-xs hover:bg-zinc-100 flex items-center gap-2.5 text-zinc-700"
+                  >
+                    <GitMerge size={13} className="text-[#3f0e40]" />
+                    <span>Compact agent context (/compact)</span>
+                  </button>
+                )}
+
+                {onOpenCreateBotModal && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onOpenCreateBotModal();
+                    }}
+                    className="w-full px-3 py-1.5 text-left text-xs hover:bg-zinc-100 flex items-center gap-2.5 text-zinc-700"
+                  >
+                    <Plus size={13} className="text-zinc-500" />
+                    <span>Add or create agent…</span>
+                  </button>
+                )}
+
+                {onOpenSettings && (
+                  <div className="border-t border-zinc-100 mt-1 pt-1">
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onOpenSettings();
+                      }}
+                      className="w-full px-3 py-1.5 text-left text-xs hover:bg-zinc-100 flex items-center gap-2.5 text-zinc-700"
+                    >
+                      <Settings size={13} className="text-zinc-500" />
+                      <span>Workspace settings…</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       </div>
-
-      {/* Laze App Pin Strip (When channel has pinned apps) */}
-      {pinnedApps.length > 0 && (
-        <div className="px-5 py-1.5 bg-zinc-50/80 border-t border-zinc-100 flex items-center gap-2 overflow-x-auto">
-          <div className="flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400 mr-1">
-            <Pin size={11} className="rotate-45" />
-            <span>Pinned Apps</span>
-          </div>
-          {pinnedApps.map((app) => {
-            const isSelected = activeAppSlug === app.slug;
-            return (
-              <button
-                key={app.id}
-                onClick={() => onSelectPinnedApp?.(app)}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all border ${
-                  isSelected
-                    ? "bg-[#5b40d6] text-white border-[#5b40d6] shadow-2xs"
-                    : "bg-white hover:bg-zinc-100/80 text-zinc-700 border-zinc-200/90"
-                }`}
-              >
-                <AppWindow size={12} className={isSelected ? "text-white" : "text-[#5b40d6]"} />
-                <span>{app.title}</span>
-                <span
-                  className={`text-[10px] font-mono px-1 rounded ${
-                    isSelected
-                      ? "bg-white/20 text-white"
-                      : "bg-zinc-100 text-zinc-500"
-                  }`}
-                >
-                  v{app.currentVersion}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 };
