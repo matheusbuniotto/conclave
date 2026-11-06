@@ -1,5 +1,5 @@
-import { db, users, messages } from "@conclave/db";
-import { eq } from "drizzle-orm";
+import { db, users, messages, bots, channelMembers } from "@conclave/db";
+import { eq, and } from "drizzle-orm";
 import { getComputeProvider, runAgentEngine, type SandboxInstance } from "@conclave/compute";
 import Redis from "ioredis";
 
@@ -13,35 +13,56 @@ export async function handleAgentResponse(options: {
 }) {
   const { workspaceId, channelId, userMessage, parentMessageId, senderId, redisPublisher } = options;
 
-  // 1. Find the workspace agent user
-  const [agent] = await db
-    .select()
-    .from(users)
-    .where(eq(users.userType, "agent"));
+  // 1. Find all bots currently assigned to this channel
+  const channelBots = await db
+    .select({
+      botId: bots.id,
+      userId: bots.userId,
+      name: bots.name,
+      handle: bots.handle,
+      description: bots.description,
+      systemPrompt: bots.systemPrompt,
+      engine: bots.engine,
+      displayName: users.displayName,
+      avatarUrl: users.avatarUrl,
+      userType: users.userType,
+    })
+    .from(channelMembers)
+    .innerJoin(bots, eq(channelMembers.userId, bots.userId))
+    .innerJoin(users, eq(bots.userId, users.id))
+    .where(eq(channelMembers.channelId, channelId));
 
-  if (!agent) {
-    console.log("No agent user found in database");
+  if (channelBots.length === 0) {
+    // No bots are members of this channel
     return;
   }
 
-  // Prevent bot from answering its own messages
-  if (senderId && agent.id === senderId) {
+  // Prevent any bot from answering its own messages
+  if (senderId && channelBots.some((b) => b.userId === senderId)) {
     return;
   }
 
-  // Check if message is addressed to agent or requests an action
-  const isDirectlyMentioned = /@?(agent|bot|conclave|assistant|claude|agy)/i.test(userMessage);
+  // Check which bot (if any) is addressed
+  const matchedBot = channelBots.find((b) => {
+    const handleRegex = new RegExp(`@?(${b.handle}|${b.name.replace(/\s+/g, "")})`, "i");
+    return handleRegex.test(userMessage);
+  });
+
+  const isGeneralBotMention = /@?(agent|bot|conclave|assistant)/i.test(userMessage);
   const isBuildRequest = /(build|create|make|generate).*(app|tracker|dashboard|tool|crm|widget|counter|calc|kanban)/i.test(userMessage);
   const isExecRequest = /^(run|exec|execute|python|sqlite|bash|sh)\b/i.test(userMessage.replace(/@?(agent|bot|conclave|assistant)/gi, "").trim());
 
-  if (!isDirectlyMentioned && !isBuildRequest && !isExecRequest) {
+  if (!matchedBot && !isGeneralBotMention && !isBuildRequest && !isExecRequest) {
     return;
   }
 
-  console.log(`Agent loop invoked for message: "${userMessage}"`);
+  // Target bot: matched bot or fallback to first channel bot
+  const targetBot = matchedBot || channelBots[0];
 
-  // Choose engine
-  const prefersClaude = /claude/i.test(userMessage) || !!process.env.ANTHROPIC_API_KEY;
+  console.log(`Agent loop invoked for bot "${targetBot.name}" (@${targetBot.handle}) with message: "${userMessage}"`);
+
+  // Choose engine: message override, or bot configured engine, or default agy
+  const prefersClaude = /claude/i.test(userMessage) || (targetBot.engine === "claude" && !/agy/i.test(userMessage));
   const engineName = prefersClaude ? "Claude Code" : "Google Antigravity (agy)";
 
   // 2. Immediately send thinking placeholder to the chat feed for instant feedback!
@@ -50,7 +71,7 @@ export async function handleAgentResponse(options: {
     .values({
       workspaceId,
       channelId,
-      senderId: agent.id,
+      senderId: targetBot.userId,
       parentMessageId: parentMessageId || null,
       content: `Building in sandbox with ${engineName}...`,
       metadata: { status: "thinking" },
@@ -67,10 +88,10 @@ export async function handleAgentResponse(options: {
       data: {
         ...placeholderMsg,
         sender: {
-          id: agent.id,
-          displayName: agent.displayName,
-          avatarUrl: agent.avatarUrl,
-          userType: agent.userType,
+          id: targetBot.userId,
+          displayName: targetBot.displayName,
+          avatarUrl: targetBot.avatarUrl,
+          userType: targetBot.userType,
         },
         reactions: [],
       },
@@ -78,14 +99,17 @@ export async function handleAgentResponse(options: {
   );
 
   try {
-    // 3. Obtain isolated Sandbox for this workspace & agent
+    // 3. Obtain isolated Sandbox for this workspace & bot
     const compute = await getComputeProvider();
-    const sandbox: SandboxInstance = await compute.getOrCreateSandbox(workspaceId, agent.id);
+    const sandbox: SandboxInstance = await compute.getOrCreateSandbox(workspaceId, targetBot.userId);
 
-    // Enrich prompt for in-chat app building
+    // Enrich prompt with bot system prompt and build instructions
     let finalPrompt = userMessage;
+    if (targetBot.systemPrompt) {
+      finalPrompt = `System instructions: ${targetBot.systemPrompt}\n\nUser request: ${userMessage}`;
+    }
     if (isBuildRequest) {
-      finalPrompt = `${userMessage}\n\nIMPORTANT: Build this as an interactive web app saved directly to index.html with inline styles (Tailwind via CDN) and vanilla JS so it can be served as a micro-app inside the workspace.`;
+      finalPrompt = `${finalPrompt}\n\nIMPORTANT: Build this as an interactive web app saved directly to index.html with inline styles (Tailwind via CDN) and vanilla JS so it can be served as a micro-app inside the workspace.`;
     }
 
     // 4. Run the underlying agent engine (Claude Code or agy)
@@ -96,7 +120,7 @@ export async function handleAgentResponse(options: {
       apiKey: process.env.ANTHROPIC_API_KEY,
     });
 
-    console.log(`✓ Engine (${result.engineUsed}) finished in ${result.durationSeconds}s. Has artifact: ${result.hasArtifact}`);
+    console.log(`✓ Engine (${result.engineUsed}) for ${targetBot.name} finished in ${result.durationSeconds}s. Has artifact: ${result.hasArtifact}`);
 
     let metadata: Record<string, unknown> = {};
 
@@ -110,7 +134,7 @@ export async function handleAgentResponse(options: {
         ? "Team Kanban Board"
         : userMessage.includes("tracker")
         ? "Team Task Tracker"
-        : "Interactive Mini-Tool";
+        : `${targetBot.name} App`;
 
       metadata = {
         type: "interactive_app",
@@ -118,6 +142,7 @@ export async function handleAgentResponse(options: {
         appUrl: `http://localhost:${sandbox.hostPort}`,
         containerPort: sandbox.hostPort,
         sandboxId: sandbox.id,
+        botId: targetBot.botId,
         engine: result.engineUsed,
         duration: `${result.durationSeconds.toFixed(1)}s`,
       };
@@ -144,10 +169,10 @@ export async function handleAgentResponse(options: {
         data: {
           ...updatedMsg,
           sender: {
-            id: agent.id,
-            displayName: agent.displayName,
-            avatarUrl: agent.avatarUrl,
-            userType: agent.userType,
+            id: targetBot.userId,
+            displayName: targetBot.displayName,
+            avatarUrl: targetBot.avatarUrl,
+            userType: targetBot.userType,
           },
           reactions: [],
         },

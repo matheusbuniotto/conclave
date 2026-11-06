@@ -1,13 +1,22 @@
 import React from "react";
-import { Hash, Lock, Users, Sparkles } from "lucide-react";
+import { Hash, Lock, Users, Bot, Plus } from "lucide-react";
 import type { ChannelItem } from "../api";
 
 interface ChatHeaderProps {
   channel: ChannelItem | null;
   memberCount: number;
+  botCount?: number;
+  onOpenMembersModal?: () => void;
+  onOpenCreateBotModal?: () => void;
 }
 
-export const ChatHeader: React.FC<ChatHeaderProps> = ({ channel, memberCount }) => {
+export const ChatHeader: React.FC<ChatHeaderProps> = ({
+  channel,
+  memberCount,
+  botCount = 0,
+  onOpenMembersModal,
+  onOpenCreateBotModal,
+}) => {
   const Icon = channel?.type === "private" ? Lock : Hash;
 
   return (
@@ -28,10 +37,37 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ channel, memberCount }) 
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1.5 text-[11.5px] text-zinc-600 bg-zinc-100 hover:bg-zinc-200/80 px-2.5 py-1 rounded-md cursor-pointer transition-colors border border-zinc-200/60 font-medium">
+        {/* Manage Bots in this Channel */}
+        <button
+          onClick={onOpenMembersModal}
+          className="flex items-center gap-1.5 text-[11.5px] text-zinc-700 bg-white hover:bg-zinc-50 px-2.5 py-1 rounded-md cursor-pointer transition-colors border border-zinc-200/80 font-medium shadow-2xs"
+          title="Manage Bots in Channel"
+        >
+          <Bot size={13} className="text-zinc-500" />
+          <span>{botCount} {botCount === 1 ? "Bot" : "Bots"}</span>
+        </button>
+
+        {/* Member Counter Button */}
+        <button
+          onClick={onOpenMembersModal}
+          className="flex items-center gap-1.5 text-[11.5px] text-zinc-600 bg-zinc-100 hover:bg-zinc-200/80 px-2.5 py-1 rounded-md cursor-pointer transition-colors border border-zinc-200/60 font-medium"
+          title="Channel Members"
+        >
           <Users size={12} className="text-zinc-500" />
           <span>{memberCount}</span>
-        </div>
+        </button>
+
+        {/* Quick Add Bot Button */}
+        {onOpenCreateBotModal && (
+          <button
+            onClick={onOpenCreateBotModal}
+            className="flex items-center gap-1 text-[11.5px] text-zinc-800 hover:text-black bg-zinc-100 hover:bg-zinc-200/80 px-2 py-1 rounded-md transition-colors border border-zinc-200/60 font-medium"
+            title="Create New Bot"
+          >
+            <Plus size={12} />
+            <span>New Bot</span>
+          </button>
+        )}
       </div>
     </div>
   );

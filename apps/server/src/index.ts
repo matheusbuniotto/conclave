@@ -2,8 +2,8 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import Redis from "ioredis";
-import { db, users, workspaces, channels, messages, reactions, channelMembers, workspaceMembers } from "@conclave/db";
-import { eq, and, isNull, desc, asc } from "drizzle-orm";
+import { db, users, workspaces, channels, messages, reactions, channelMembers, workspaceMembers, bots } from "@conclave/db";
+import { eq, and, isNull, desc, asc, inArray } from "drizzle-orm";
 import type { WebSocket } from "ws";
 import { handleAgentResponse } from "./agent";
 
@@ -66,6 +66,208 @@ fastify.get<{ Params: { workspaceId: string } }>(
       .where(eq(workspaceMembers.workspaceId, request.params.workspaceId));
   }
 );
+
+// List workspace bots (with assigned channels)
+fastify.get<{ Params: { workspaceId: string } }>(
+  "/api/workspaces/:workspaceId/bots",
+  async (request) => {
+    const workspaceBots = await db
+      .select({
+        id: bots.id,
+        userId: bots.userId,
+        workspaceId: bots.workspaceId,
+        createdById: bots.createdById,
+        name: bots.name,
+        handle: bots.handle,
+        description: bots.description,
+        systemPrompt: bots.systemPrompt,
+        engine: bots.engine,
+        createdAt: bots.createdAt,
+        user: {
+          id: users.id,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          userType: users.userType,
+        },
+      })
+      .from(bots)
+      .innerJoin(users, eq(bots.userId, users.id))
+      .where(eq(bots.workspaceId, request.params.workspaceId));
+
+    const botUserIds = workspaceBots.map((b) => b.userId);
+    const memberships = botUserIds.length
+      ? await db
+          .select({
+            userId: channelMembers.userId,
+            channelId: channelMembers.channelId,
+          })
+          .from(channelMembers)
+          .where(inArray(channelMembers.userId, botUserIds))
+      : [];
+
+    return workspaceBots.map((b) => ({
+      ...b,
+      channelIds: memberships
+        .filter((m) => m.userId === b.userId)
+        .map((m) => m.channelId),
+    }));
+  }
+);
+
+// Create a new bot for the workspace owner
+fastify.post<{
+  Params: { workspaceId: string };
+  Body: {
+    name: string;
+    handle: string;
+    description?: string;
+    systemPrompt?: string;
+    engine?: string;
+    channelIds?: string[];
+    ownerId: string;
+  };
+}>("/api/workspaces/:workspaceId/bots", async (request, reply) => {
+  const { workspaceId } = request.params;
+  const { name, handle, description, systemPrompt, engine = "agy", channelIds = [], ownerId } = request.body;
+
+  const cleanHandle = handle.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+
+  // 1. Create a user record of type 'agent'
+  const [botUser] = await db
+    .insert(users)
+    .values({
+      email: `${cleanHandle}-${Date.now()}@bot.conclave.local`,
+      displayName: name,
+      avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanHandle}`,
+      userType: "agent",
+    })
+    .returning();
+
+  // 2. Add bot to workspace members
+  await db.insert(workspaceMembers).values({
+    workspaceId,
+    userId: botUser.id,
+    role: "member",
+  });
+
+  // 3. Add bot to selected channels
+  if (channelIds.length > 0) {
+    for (const chId of channelIds) {
+      await db.insert(channelMembers).values({
+        channelId: chId,
+        userId: botUser.id,
+      });
+    }
+  }
+
+  // 4. Create the bot record
+  const [newBot] = await db
+    .insert(bots)
+    .values({
+      userId: botUser.id,
+      workspaceId,
+      createdById: ownerId,
+      name,
+      handle: cleanHandle,
+      description: description || null,
+      systemPrompt: systemPrompt || null,
+      engine,
+    })
+    .returning();
+
+  // 5. Broadcast new member / bot event
+  await redisPublisher.publish(
+    "conclave:events",
+    JSON.stringify({
+      type: "bot.created",
+      workspaceId,
+      data: {
+        ...newBot,
+        channelIds,
+        user: botUser,
+      },
+    })
+  );
+
+  return reply.status(201).send({
+    ...newBot,
+    channelIds,
+    user: botUser,
+  });
+});
+
+// List members of a channel (humans and bots)
+fastify.get<{ Params: { channelId: string } }>(
+  "/api/channels/:channelId/members",
+  async (request) => {
+    return await db
+      .select({
+        id: users.id,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        userType: users.userType,
+        joinedAt: channelMembers.joinedAt,
+      })
+      .from(channelMembers)
+      .innerJoin(users, eq(channelMembers.userId, users.id))
+      .where(eq(channelMembers.channelId, request.params.channelId));
+  }
+);
+
+// Add a member or bot to a channel
+fastify.post<{
+  Params: { channelId: string };
+  Body: { userId: string };
+}>("/api/channels/:channelId/members", async (request, reply) => {
+  const { channelId } = request.params;
+  const { userId } = request.body;
+
+  // Check if already in channel
+  const existing = await db
+    .select()
+    .from(channelMembers)
+    .where(and(eq(channelMembers.channelId, channelId), eq(channelMembers.userId, userId)));
+
+  if (existing.length === 0) {
+    await db.insert(channelMembers).values({
+      channelId,
+      userId,
+    });
+
+    await redisPublisher.publish(
+      "conclave:events",
+      JSON.stringify({
+        type: "channel.member_joined",
+        channelId,
+        userId,
+      })
+    );
+  }
+
+  return reply.send({ success: true, channelId, userId });
+});
+
+// Remove a member or bot from a channel
+fastify.delete<{
+  Params: { channelId: string; userId: string };
+}>("/api/channels/:channelId/members/:userId", async (request, reply) => {
+  const { channelId, userId } = request.params;
+
+  await db
+    .delete(channelMembers)
+    .where(and(eq(channelMembers.channelId, channelId), eq(channelMembers.userId, userId)));
+
+  await redisPublisher.publish(
+    "conclave:events",
+    JSON.stringify({
+      type: "channel.member_left",
+      channelId,
+      userId,
+    })
+  );
+
+  return reply.send({ success: true, channelId, userId });
+});
 
 // Get channel message feed (root messages only, not thread replies)
 fastify.get<{ Params: { channelId: string } }>(

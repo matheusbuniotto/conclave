@@ -1,4 +1,4 @@
-import { db, users, workspaces, workspaceMembers, channels, channelMembers, messages, reactions } from "./index";
+import { db, users, workspaces, workspaceMembers, channels, channelMembers, messages, reactions, bots } from "./index";
 import { eq } from "drizzle-orm";
 
 async function seed() {
@@ -7,6 +7,7 @@ async function seed() {
   // 1. Clean up existing data
   await db.delete(reactions);
   await db.delete(messages);
+  await db.delete(bots);
   await db.delete(channelMembers);
   await db.delete(channels);
   await db.delete(workspaceMembers);

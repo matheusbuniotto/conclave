@@ -53,6 +53,21 @@ export interface MemberItem {
   role: "owner" | "admin" | "member" | "guest";
 }
 
+export interface BotItem {
+  id: string;
+  userId: string;
+  workspaceId: string;
+  createdById: string;
+  name: string;
+  handle: string;
+  description?: string | null;
+  systemPrompt?: string | null;
+  engine: "agy" | "claude";
+  channelIds: string[];
+  user: Sender;
+  createdAt: string;
+}
+
 const API_BASE = "/api";
 
 export const api = {
@@ -71,6 +86,57 @@ export const api = {
   async getMembers(workspaceId: string): Promise<MemberItem[]> {
     const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/members`);
     if (!res.ok) throw new Error("Failed to load members");
+    return res.json();
+  },
+
+  async getBots(workspaceId: string): Promise<BotItem[]> {
+    const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/bots`);
+    if (!res.ok) throw new Error("Failed to load bots");
+    return res.json();
+  },
+
+  async createBot(
+    workspaceId: string,
+    body: {
+      name: string;
+      handle: string;
+      description?: string;
+      systemPrompt?: string;
+      engine?: string;
+      channelIds?: string[];
+      ownerId: string;
+    }
+  ): Promise<BotItem> {
+    const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/bots`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error("Failed to create bot");
+    return res.json();
+  },
+
+  async getChannelMembers(channelId: string): Promise<Sender[]> {
+    const res = await fetch(`${API_BASE}/channels/${channelId}/members`);
+    if (!res.ok) throw new Error("Failed to load channel members");
+    return res.json();
+  },
+
+  async addChannelMember(channelId: string, userId: string) {
+    const res = await fetch(`${API_BASE}/channels/${channelId}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    if (!res.ok) throw new Error("Failed to add member to channel");
+    return res.json();
+  },
+
+  async removeChannelMember(channelId: string, userId: string) {
+    const res = await fetch(`${API_BASE}/channels/${channelId}/members/${userId}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error("Failed to remove member from channel");
     return res.json();
   },
 

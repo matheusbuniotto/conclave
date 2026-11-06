@@ -88,10 +88,39 @@ export const attachments = pgTable("attachments", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const bots = pgTable("bots", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
+  createdById: uuid("created_by_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  handle: text("handle").notNull(),
+  description: text("description"),
+  systemPrompt: text("system_prompt"),
+  engine: text("engine").default("agy").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   memberships: many(workspaceMembers),
   messages: many(messages),
+}));
+
+export const botsRelations = relations(bots, ({ one }) => ({
+  user: one(users, {
+    fields: [bots.userId],
+    references: [users.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [bots.workspaceId],
+    references: [workspaces.id],
+  }),
+  creator: one(users, {
+    fields: [bots.createdById],
+    references: [users.id],
+  }),
 }));
 
 export const workspacesRelations = relations(workspaces, ({ one, many }) => ({

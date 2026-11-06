@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, type MemberItem, type MessageItem } from "./api";
+import { api, type MemberItem, type MessageItem, type BotItem, type Sender } from "./api";
 import { WorkspaceRail } from "./components/WorkspaceRail";
 import { Sidebar } from "./components/Sidebar";
 import { ChatHeader } from "./components/ChatHeader";
@@ -8,6 +8,8 @@ import { MessageList } from "./components/MessageList";
 import { MessageComposer } from "./components/MessageComposer";
 import { ThreadDrawer } from "./components/ThreadDrawer";
 import { ArtifactPanel, type ActiveAppArtifact } from "./components/ArtifactPanel";
+import { CreateBotModal } from "./components/CreateBotModal";
+import { ChannelMembersModal } from "./components/ChannelMembersModal";
 
 export const App: React.FC = () => {
   const queryClient = useQueryClient();
@@ -19,6 +21,10 @@ export const App: React.FC = () => {
   const [activeThreadMessage, setActiveThreadMessage] = useState<MessageItem | null>(null);
   const [activeArtifact, setActiveArtifact] = useState<ActiveAppArtifact | null>(null);
   const [currentUser, setCurrentUser] = useState<MemberItem | null>(null);
+
+  // Bot & Channel modals state
+  const [isCreateBotModalOpen, setIsCreateBotModalOpen] = useState(false);
+  const [isChannelMembersModalOpen, setIsChannelMembersModalOpen] = useState(false);
 
   // 1. Fetch Workspaces
   const { data: workspaces = [] } = useQuery({
@@ -52,6 +58,20 @@ export const App: React.FC = () => {
     queryKey: ["members", activeWorkspaceId],
     queryFn: () => (activeWorkspaceId ? api.getMembers(activeWorkspaceId) : Promise.resolve([])),
     enabled: !!activeWorkspaceId,
+  });
+
+  // 3b. Fetch Workspace Bots
+  const { data: bots = [] } = useQuery({
+    queryKey: ["bots", activeWorkspaceId],
+    queryFn: () => (activeWorkspaceId ? api.getBots(activeWorkspaceId) : Promise.resolve([])),
+    enabled: !!activeWorkspaceId,
+  });
+
+  // 3c. Fetch Channel Members
+  const { data: channelMembers = [] } = useQuery({
+    queryKey: ["channelMembers", activeChannelId],
+    queryFn: () => (activeChannelId ? api.getChannelMembers(activeChannelId) : Promise.resolve([])),
+    enabled: !!activeChannelId,
   });
 
   // Default to first human user (Alice)
@@ -107,6 +127,13 @@ export const App: React.FC = () => {
           }
         } else if (payload.type === "reaction.added" || payload.type === "reaction.removed") {
           queryClient.invalidateQueries({ queryKey: ["messages", payload.channelId] });
+        } else if (payload.type === "bot.created") {
+          queryClient.invalidateQueries({ queryKey: ["bots", activeWorkspaceId] });
+          queryClient.invalidateQueries({ queryKey: ["members", activeWorkspaceId] });
+          queryClient.invalidateQueries({ queryKey: ["channelMembers", activeChannelId] });
+        } else if (payload.type === "channel.member_joined" || payload.type === "channel.member_left") {
+          queryClient.invalidateQueries({ queryKey: ["channelMembers", payload.channelId] });
+          queryClient.invalidateQueries({ queryKey: ["bots", activeWorkspaceId] });
         }
       } catch (e) {
         console.error("Error processing websocket payload", e);
@@ -169,6 +196,55 @@ export const App: React.FC = () => {
     },
   });
 
+  // Create Bot mutation
+  const createBotMutation = useMutation({
+    mutationFn: (data: {
+      name: string;
+      handle: string;
+      description: string;
+      systemPrompt: string;
+      engine: "agy" | "claude";
+      channelIds: string[];
+    }) => {
+      if (!activeWorkspaceId || !currentUser) {
+        throw new Error("Missing workspace or user context");
+      }
+      return api.createBot(activeWorkspaceId, {
+        ...data,
+        ownerId: currentUser.id,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["bots", activeWorkspaceId] });
+      queryClient.invalidateQueries({ queryKey: ["members", activeWorkspaceId] });
+      queryClient.invalidateQueries({ queryKey: ["channelMembers", activeChannelId] });
+    },
+  });
+
+  // Add bot/member to channel mutation
+  const addMemberToChannelMutation = useMutation({
+    mutationFn: (userId: string) => {
+      if (!activeChannelId) throw new Error("Missing active channel");
+      return api.addChannelMember(activeChannelId, userId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["channelMembers", activeChannelId] });
+      queryClient.invalidateQueries({ queryKey: ["bots", activeWorkspaceId] });
+    },
+  });
+
+  // Remove bot/member from channel mutation
+  const removeMemberFromChannelMutation = useMutation({
+    mutationFn: (userId: string) => {
+      if (!activeChannelId) throw new Error("Missing active channel");
+      return api.removeChannelMember(activeChannelId, userId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["channelMembers", activeChannelId] });
+      queryClient.invalidateQueries({ queryKey: ["bots", activeWorkspaceId] });
+    },
+  });
+
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) || null;
   const activeChannel = channels.find((c) => c.id === activeChannelId) || null;
 
@@ -191,6 +267,7 @@ export const App: React.FC = () => {
         workspace={activeWorkspace}
         channels={channels}
         members={members}
+        bots={bots}
         activeChannelId={activeChannelId}
         onSelectChannel={(id) => {
           setActiveChannelId(id);
@@ -198,13 +275,17 @@ export const App: React.FC = () => {
         }}
         currentUser={currentUser}
         onSwitchUser={setCurrentUser}
+        onOpenCreateBotModal={() => setIsCreateBotModalOpen(true)}
       />
 
       {/* 3. Central Chat Column (True Slack Layout) */}
       <div className="flex-1 flex flex-col min-w-0 bg-white">
         <ChatHeader
           channel={activeChannel}
-          memberCount={members.length}
+          memberCount={channelMembers.length || members.length}
+          botCount={bots.filter((b) => activeChannelId && b.channelIds.includes(activeChannelId)).length}
+          onOpenMembersModal={() => setIsChannelMembersModalOpen(true)}
+          onOpenCreateBotModal={() => setIsCreateBotModalOpen(true)}
         />
 
         <MessageList
@@ -247,6 +328,33 @@ export const App: React.FC = () => {
           onClose={() => setActiveArtifact(null)}
         />
       )}
+
+      {/* 6. Modal: Create New Bot */}
+      <CreateBotModal
+        isOpen={isCreateBotModalOpen}
+        onClose={() => setIsCreateBotModalOpen(false)}
+        channels={channels}
+        currentChannelId={activeChannelId}
+        onCreateBot={async (data) => {
+          await createBotMutation.mutateAsync(data);
+        }}
+      />
+
+      {/* 7. Modal: Channel Members & Bots Management */}
+      <ChannelMembersModal
+        isOpen={isChannelMembersModalOpen}
+        onClose={() => setIsChannelMembersModalOpen(false)}
+        channel={activeChannel}
+        channelMembers={members}
+        allBots={bots}
+        onAddBotToChannel={async (botUserId) => {
+          await addMemberToChannelMutation.mutateAsync(botUserId);
+        }}
+        onRemoveBotFromChannel={async (botUserId) => {
+          await removeMemberFromChannelMutation.mutateAsync(botUserId);
+        }}
+        onOpenCreateBotModal={() => setIsCreateBotModalOpen(true)}
+      />
     </div>
   );
 };
