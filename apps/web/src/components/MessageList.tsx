@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { MessageItem } from "../api";
 import type { ActiveAppArtifact } from "./ArtifactPanel";
+import { SlackMarkdown } from "./SlackMarkdown";
 
 interface MessageListProps {
   messages: MessageItem[];
@@ -33,32 +34,7 @@ export const MessageList: React.FC<MessageListProps> = ({
     setTimeout(() => setCopiedId(null), 1500);
   };
 
-  // Render markdown code blocks if present
-  const renderFormattedContent = (content: string) => {
-    if (content.includes("```")) {
-      const parts = content.split(/(```[\s\S]*?```)/g);
-      return parts.map((part, index) => {
-        if (part.startsWith("```") && part.endsWith("```")) {
-          const lines = part.slice(3, -3).trim().split("\n");
-          const firstLine = lines[0].trim();
-          const hasLang = !firstLine.includes(" ") && firstLine.length > 0;
-          const code = hasLang ? lines.slice(1).join("\n") : lines.join("\n");
 
-          return (
-            <pre
-              key={index}
-              className="my-2 p-3 bg-zinc-900 text-zinc-100 rounded-lg text-xs font-mono overflow-x-auto border border-zinc-800"
-            >
-              <code>{code}</code>
-            </pre>
-          );
-        }
-        return <span key={index} className="whitespace-pre-wrap">{part}</span>;
-      });
-    }
-
-    return <span className="whitespace-pre-wrap">{content}</span>;
-  };
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-4 space-y-1">
@@ -131,7 +107,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                       <span>{msg.content}</span>
                     </div>
                   ) : (
-                    renderFormattedContent(msg.content)
+                    <SlackMarkdown content={msg.content} />
                   )}
                 </div>
 

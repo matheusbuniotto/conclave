@@ -2,6 +2,7 @@ import React from "react";
 import { X, CornerDownRight, Sparkles } from "lucide-react";
 import type { MessageItem } from "../api";
 import { MessageComposer } from "./MessageComposer";
+import { SlackMarkdown } from "./SlackMarkdown";
 
 interface ThreadDrawerProps {
   parentMessage: MessageItem | null;
@@ -58,7 +59,7 @@ export const ThreadDrawer: React.FC<ThreadDrawerProps> = ({
               </span>
             </div>
             <div className="text-[12.5px] text-zinc-800 mt-1 leading-relaxed break-words">
-              {parentMessage.content}
+              <SlackMarkdown content={parentMessage.content} />
             </div>
           </div>
         </div>
@@ -98,7 +99,7 @@ export const ThreadDrawer: React.FC<ThreadDrawerProps> = ({
                     </span>
                   </div>
                   <div className="text-[12.5px] text-zinc-800 mt-0.5 leading-relaxed break-words">
-                    {reply.content}
+                    <SlackMarkdown content={reply.content} />
                   </div>
                 </div>
               </div>
